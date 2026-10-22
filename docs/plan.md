@@ -57,8 +57,12 @@ agentic-messenger/
 │   ├── server/         # Node.js/PostgreSQL relay, WebSocket broker, MLS epoch sync
 │   └── web-ui/         # Standalone Human UI (Next.js / React / Tailwind)
 ├── docs/
-│   ├── plan.md         # This implementation blueprint
-│   └── protocol-v1.md  # Detailed protocol specification
+│   ├── plan.md                       # This master implementation blueprint
+│   ├── brainstorm-chatgpt.md         # Original ChatGPT design session transcript
+│   ├── aidos-joint-app-ux.md         # Joint messenger UX, 4-party mesh, Jack & John flows
+│   ├── identity-and-cryptography.md  # Multi-device key hierarchy, persistent agents, MLS RFC 9420
+│   ├── relay-and-storage.md          # Blind router, store-and-forward queue, encrypted blobs, invites
+│   └── agent-memory-architecture.md  # Dual-memory model: Working chat stream vs Aidos Knowledge
 ├── package.json
 └── tsconfig.json
 ```
