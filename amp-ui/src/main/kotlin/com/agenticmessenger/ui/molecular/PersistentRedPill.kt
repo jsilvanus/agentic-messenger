@@ -74,7 +74,7 @@ import kotlinx.coroutines.launch
 fun PersistentRedPill(
     aiConfig: OpenAiConfig,
     contacts: List<ContactUiModel>,
-    onSendMessageToContact: suspend (contact: ContactDescriptor, text: String) -> Boolean,
+    onSendMessageToContact: suspend (contact: ContactDescriptor, text: String, ghostwrite: Boolean) -> Boolean,
     onFetchRecentMessages: suspend (mailboxId: String, limit: Int) -> List<AmpConversationTurn>,
     modifier: Modifier = Modifier,
 ) {

@@ -307,42 +307,6 @@ fun DesktopMessengerWindow(
                 scope = scope
             )
 
-            // Persistent Red Pill: User-Level Orchestrator (Dictator style)
-            PersistentRedPill(
-                aiConfig = aiConfig,
-                contacts = contacts,
-                onSendMessageToContact = { contact, text ->
-                    try {
-                        session.sendMessage(
-                            recipientMailboxToken = contact.mailboxId,
-                            recipientPrincipalId = contact.principalId,
-                            recipientX25519PublicKeyHex = contact.x25519PublicKeyHex.ifEmpty { "e2ee_mock_key" },
-                            plaintext = text,
-                            policy = com.agenticmessenger.core.model.PrivacyLevel.AGENT_ACCESSIBLE,
-                            conversationId = contact.mailboxId,
-                            recipientEndpointType = com.agenticmessenger.core.model.EndpointType.HUMAN_DIRECT,
-                            annotationsJson = """[{"type":"orchestrator_turn","confidence":0.99}]"""
-                        )
-                        true
-                    } catch (_: Exception) {
-                        false
-                    }
-                },
-                onFetchRecentMessages = { mailboxId, limit ->
-                    try {
-                        session.messageRepo.getMessages(mailboxId, limit).map { stored ->
-                            dev.aidos.amp.AmpConversationTurn(
-                                role = if (stored.senderId == identity.principalId) "user" else "assistant",
-                                text = stored.plaintext,
-                                senderId = stored.senderId
-                            )
-                        }
-                    } catch (_: Exception) {
-                        emptyList()
-                    }
-                }
-            )
-
             ConversationScreen(
                 presenter = presenter,
                 currentUserId = identity.principalId,
@@ -427,7 +391,8 @@ fun main() = application {
             initialContact = bobContact,
             session = aliceSession,
             openAiClient = openAiClient,
-            openAiConfig = sharedAiConfig
+            openAiConfig = sharedAiConfig,
+            contacts = listOf(bobContact)
         )
     }
     val bobPresenter = remember {
@@ -438,7 +403,8 @@ fun main() = application {
             initialContact = aliceContact,
             session = bobSession,
             openAiClient = openAiClient,
-            openAiConfig = sharedAiConfig
+            openAiConfig = sharedAiConfig,
+            contacts = listOf(aliceContact)
         )
     }
 
@@ -494,4 +460,6 @@ fun main() = application {
         )
     }
 }
+
+
 
