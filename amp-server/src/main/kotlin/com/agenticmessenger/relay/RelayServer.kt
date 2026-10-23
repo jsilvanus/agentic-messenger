@@ -3,6 +3,9 @@ package com.agenticmessenger.relay
 import com.agenticmessenger.core.protocol.BlobMetadata
 import com.agenticmessenger.core.protocol.KeyPackageRecord
 import com.agenticmessenger.core.protocol.RelayFrame
+import com.agenticmessenger.relay.pubsub.LocalPubSubBroker
+import com.agenticmessenger.relay.pubsub.PubSubBroker
+import com.agenticmessenger.relay.queue.SqliteStoreAndForwardQueue
 import com.agenticmessenger.relay.queue.StoreAndForwardQueue
 import com.agenticmessenger.relay.registry.KeyPackageRegistry
 import com.agenticmessenger.relay.router.MailboxRouter
@@ -42,8 +45,6 @@ import org.slf4j.LoggerFactory
 import java.io.File
 import kotlin.time.Duration.Companion.seconds
 
-
-
 class RelayServerConfig(
     val port: Int = 8080,
     val host: String = "0.0.0.0",
@@ -54,14 +55,19 @@ class RelayServerConfig(
 
 fun Application.configureRelayServer(
     router: MailboxRouter = MailboxRouter(),
-    queue: StoreAndForwardQueue = StoreAndForwardQueue(),
+    queue: StoreAndForwardQueue = SqliteStoreAndForwardQueue(),
     blobStorage: BlobStorage = EncryptedBlobStorage(File("data/blobs")),
     keyRegistry: KeyPackageRegistry = KeyPackageRegistry(),
-    relayService: RelayService = RelayService(router, queue),
+    pubSubBroker: PubSubBroker? = null,
+    relayService: RelayService = RelayService(router, queue, pubSubBroker),
     purgeIntervalMs: Long = 60_000L
 ) {
     val logger = LoggerFactory.getLogger("RelayServer")
     val startTime = System.currentTimeMillis()
+
+    if (pubSubBroker != null && router.pubSubBroker == null) {
+        router.pubSubBroker = pubSubBroker
+    }
 
     val json = Json {
         ignoreUnknownKeys = true

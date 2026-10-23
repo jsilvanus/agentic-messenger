@@ -1,6 +1,7 @@
 package com.agenticmessenger.relay.service
 
 import com.agenticmessenger.core.protocol.RelayFrame
+import com.agenticmessenger.relay.pubsub.PubSubBroker
 import com.agenticmessenger.relay.queue.StoreAndForwardQueue
 import com.agenticmessenger.relay.router.MailboxRouter
 import io.ktor.websocket.DefaultWebSocketSession
@@ -12,10 +13,12 @@ import org.slf4j.LoggerFactory
 class RelayService(
     val router: MailboxRouter,
     val queue: StoreAndForwardQueue,
+    val pubSubBroker: PubSubBroker? = null,
     val json: Json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 ) {
 
     private val logger = LoggerFactory.getLogger(RelayService::class.java)
+    val activeBroker: PubSubBroker? = pubSubBroker ?: router.pubSubBroker
 
     /**
      * Processes an incoming frame from an active WebSocket session.
@@ -43,50 +46,45 @@ class RelayService(
                 val queued = mutableListOf<String>()
 
                 for (destMailbox in frame.destinationMailboxes) {
-                    if (router.isOnline(destMailbox)) {
-                        val deliverFrame = RelayFrame.Deliver(
-                            messageId = frame.messageId,
-                            destinationMailbox = destMailbox,
-                            sourceMailbox = frame.sourceMailbox,
-                            payloadCiphertext = frame.payloadCiphertext,
-                            timestamp = frame.timestamp
-                        )
-                        val frameText = json.encodeToString<RelayFrame>(deliverFrame)
-                        val delivered = router.dispatch(destMailbox, frameText)
-                        if (delivered) {
+                    val deliverFrame = RelayFrame.Deliver(
+                        messageId = frame.messageId,
+                        destinationMailbox = destMailbox,
+                        sourceMailbox = frame.sourceMailbox,
+                        payloadCiphertext = frame.payloadCiphertext,
+                        timestamp = frame.timestamp
+                    )
+                    val frameText = json.encodeToString<RelayFrame>(deliverFrame)
+
+                    // Always persist in store-and-forward queue for durability until delivery ACK
+                    queue.enqueue(
+                        messageId = frame.messageId,
+                        destinationMailbox = destMailbox,
+                        sourceMailbox = frame.sourceMailbox,
+                        payloadCiphertext = frame.payloadCiphertext,
+                        ttlSeconds = frame.ttlSeconds ?: (14L * 24 * 3600)
+                    )
+
+                    val broker = activeBroker
+                    if (broker != null) {
+                        // Real-time distributed routing via PubSubBroker
+                        val subscriberCount = broker.publish(destMailbox, frameText)
+                        if (subscriberCount > 0 || router.isOnline(destMailbox)) {
                             direct.add(destMailbox)
-                            // Also enqueue briefly in store-and-forward until recipient sends ACK,
-                            // or allow immediate delivery.
-                            // In high-reliability mode: we enqueue so if recipient crashes before ACK,
-                            // message isn't lost.
-                            queue.enqueue(
-                                messageId = frame.messageId,
-                                destinationMailbox = destMailbox,
-                                sourceMailbox = frame.sourceMailbox,
-                                payloadCiphertext = frame.payloadCiphertext,
-                                ttlSeconds = frame.ttlSeconds ?: (14L * 24 * 3600)
-                            )
                         } else {
-                            // Direct dispatch failed, fall back to offline queue
-                            queue.enqueue(
-                                messageId = frame.messageId,
-                                destinationMailbox = destMailbox,
-                                sourceMailbox = frame.sourceMailbox,
-                                payloadCiphertext = frame.payloadCiphertext,
-                                ttlSeconds = frame.ttlSeconds ?: (14L * 24 * 3600)
-                            )
                             queued.add(destMailbox)
                         }
                     } else {
-                        // Recipient is offline, enqueue in ephemeral store-and-forward
-                        queue.enqueue(
-                            messageId = frame.messageId,
-                            destinationMailbox = destMailbox,
-                            sourceMailbox = frame.sourceMailbox,
-                            payloadCiphertext = frame.payloadCiphertext,
-                            ttlSeconds = frame.ttlSeconds ?: (14L * 24 * 3600)
-                        )
-                        queued.add(destMailbox)
+                        // Local standalone fallback without pubsub
+                        if (router.isOnline(destMailbox)) {
+                            val delivered = router.dispatch(destMailbox, frameText)
+                            if (delivered) {
+                                direct.add(destMailbox)
+                            } else {
+                                queued.add(destMailbox)
+                            }
+                        } else {
+                            queued.add(destMailbox)
+                        }
                     }
                 }
 
@@ -98,7 +96,7 @@ class RelayService(
             }
 
             is RelayFrame.Ack -> {
-                // Permanently purge ciphertext from database
+                // Permanently purge ciphertext from shared database / queue
                 val purged = queue.acknowledge(frame.messageId, frame.mailboxId)
                 logger.debug("Purged message '{}' for mailbox '{}': {}", frame.messageId, frame.mailboxId, purged)
                 RelayFrame.AckConfirm(messageId = frame.messageId, mailboxId = frame.mailboxId)
