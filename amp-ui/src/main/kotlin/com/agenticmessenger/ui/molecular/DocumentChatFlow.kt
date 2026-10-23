@@ -164,7 +164,9 @@ fun DocumentChatFlow(
                             currentUserId = currentUserId,
                             onApproveDisclosure = { presenter.approveDisclosure(it) },
                             onDeclineDisclosure = { presenter.declineDisclosure(it) },
-                            onConfirmCalendar = { presenter.confirmCalendarAction(item.id) }
+                            onConfirmCalendar = { presenter.confirmCalendarAction(item.id) },
+                            onToggleStt = { presenter.toggleSttVisibility(it) },
+                            onUnshieldForAi = { presenter.unshieldMessageForAi(it) }
                         )
                     }
                 }

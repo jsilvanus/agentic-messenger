@@ -1,6 +1,7 @@
 package com.agenticmessenger.ui.model
 
 import com.agenticmessenger.core.model.AssertionLevel
+import com.agenticmessenger.core.model.AttachmentPayload
 import com.agenticmessenger.core.model.EndpointIdentifier
 import com.agenticmessenger.core.model.EndpointType
 import com.agenticmessenger.core.model.PrivacyLevel
@@ -91,7 +92,13 @@ sealed class TimelineItemUiModel {
         val localInferenceNote: String? = null,
         val audioPlayback: AudioPlaybackUiState? = null,
         val isDelivered: Boolean = true,
-        val isRead: Boolean = true
+        val isRead: Boolean = true,
+        val attachments: List<AttachmentPayload> = emptyList(),
+        val isShieldedVoice: Boolean = false,
+        val shieldedSttTranscript: String? = null,
+        val isSttVisible: Boolean = true,
+        val isUnshieldedForAi: Boolean = false,
+        val disclosureReceiptReceived: Boolean = false
     ) : TimelineItemUiModel()
 
     /**
@@ -175,5 +182,6 @@ data class ConversationUiState(
     val isHumanOnlyE2EEMode: Boolean = false,
     val isAidosCoPilotTyping: Boolean = false,
     val isSending: Boolean = false,
+    val isShieldedSttOptOutGlobal: Boolean = false,
     val errorMessage: String? = null
 )

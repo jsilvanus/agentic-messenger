@@ -4,39 +4,36 @@ import com.agenticmessenger.core.protocol.RelayFrame
 import com.agenticmessenger.relay.pubsub.PubSubBroker
 import com.agenticmessenger.relay.queue.StoreAndForwardQueue
 import com.agenticmessenger.relay.router.MailboxRouter
+import io.ktor.server.websocket.DefaultWebSocketServerSession
 import io.ktor.websocket.DefaultWebSocketSession
 import io.ktor.websocket.Frame
+import io.ktor.websocket.send
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 
 class RelayService(
-    val router: MailboxRouter,
-    val queue: StoreAndForwardQueue,
-    val pubSubBroker: PubSubBroker? = null,
-    val json: Json = Json { ignoreUnknownKeys = true; prettyPrint = false }
+    private val router: MailboxRouter,
+    private val queue: StoreAndForwardQueue,
+    private val pubSubBroker: PubSubBroker? = null
 ) {
-
     private val logger = LoggerFactory.getLogger(RelayService::class.java)
-    val activeBroker: PubSubBroker? = pubSubBroker ?: router.pubSubBroker
+    private val json = Json { ignoreUnknownKeys = true }
 
-    /**
-     * Processes an incoming frame from an active WebSocket session.
-     * Returns an optional response frame to send back to the caller.
-     */
-    suspend fun handleFrame(session: DefaultWebSocketSession, frame: RelayFrame): RelayFrame? {
+    private var activeBroker: PubSubBroker? = pubSubBroker
+
+    fun setPubSubBroker(broker: PubSubBroker?) {
+        this.activeBroker = broker
+    }
+
+    suspend fun handleFrame(session: DefaultWebSocketServerSession, frame: RelayFrame): RelayFrame? {
         return when (frame) {
             is RelayFrame.Register -> {
                 router.register(frame.mailboxId, session)
-                logger.info("Mailbox registered: {}", frame.mailboxId)
+                logger.debug("Registered mailbox '{}'", frame.mailboxId)
 
-                // Check if there are pending offline messages waiting for this mailbox
-                val pendingCount = queue.countPending(frame.mailboxId)
-                if (pendingCount > 0) {
-                    logger.info("Mailbox '{}' has {} pending offline messages waiting", frame.mailboxId, pendingCount)
-                    // Auto-deliver pending messages upon reconnection
-                    deliverPendingMessages(session, frame.mailboxId)
-                }
+                // Drain and deliver any pending offline messages queued for this mailbox
+                deliverPendingMessages(session, frame.mailboxId)
 
                 RelayFrame.Registered(mailboxId = frame.mailboxId)
             }
@@ -119,6 +116,18 @@ class RelayService(
                     messages = deliverList,
                     remainingCount = maxOf(0, totalRemaining)
                 )
+            }
+
+            is RelayFrame.DisclosureReceipt -> {
+                // Route receipt to original sender's mailbox
+                val frameText = json.encodeToString<RelayFrame>(frame)
+                val broker = activeBroker
+                if (broker != null) {
+                    broker.publish(frame.destinationMailbox, frameText)
+                } else if (router.isOnline(frame.destinationMailbox)) {
+                    router.dispatch(frame.destinationMailbox, frameText)
+                }
+                null
             }
 
             is RelayFrame.Ping -> {

@@ -8,6 +8,8 @@ import com.agenticmessenger.client.network.AmpConnectionState
 import com.agenticmessenger.client.storage.SqliteStorage
 import com.agenticmessenger.core.crypto.BlindedMailbox
 import com.agenticmessenger.core.model.AssertionLevel
+import com.agenticmessenger.core.model.AttachmentPayload
+import com.agenticmessenger.core.model.AttachmentType
 import com.agenticmessenger.core.model.EndpointIdentifier
 import com.agenticmessenger.core.model.EndpointType
 import com.agenticmessenger.core.model.PrivacyLevel
@@ -18,6 +20,7 @@ import dev.aidos.amp.AmpConversationTurn
 import com.agenticmessenger.ui.ai.OpenAiClient
 import com.agenticmessenger.ui.ai.OpenAiConfig
 import com.agenticmessenger.ui.ai.OpenAiMessage
+import com.agenticmessenger.ui.model.AudioPlaybackUiState
 import com.agenticmessenger.ui.model.ContactFilter
 import com.agenticmessenger.ui.model.ContactUiModel
 import com.agenticmessenger.ui.model.ContactsUiState
@@ -28,6 +31,7 @@ import com.agenticmessenger.ui.model.LoginUiState
 import com.agenticmessenger.ui.model.MeshProvenanceType
 import com.agenticmessenger.ui.model.PresenceState
 import com.agenticmessenger.ui.model.TimelineItemUiModel
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -287,18 +291,23 @@ class ConversationPresenter(
         }
     }
 
+    private val hiddenSttIds = mutableSetOf<String>()
+
     private fun observeSessionConversation(mailboxId: String) {
         observeJob?.cancel()
         observeJob = scope.launch {
             session?.observeConversation(mailboxId)?.collect { storedMessages ->
                 val mappedMessages = storedMessages.map { stored ->
                     val isSender = stored.senderId == currentUserId
-                    val isHumanOnly = _state.value.isHumanOnlyE2EEMode
                     val annotations = stored.annotationsJson ?: ""
                     val isGhostwritten = annotations.contains("ghostwritten_turn")
                     val isAgentGenerated = annotations.contains("orchestrator_turn") ||
                                            annotations.contains("agent_delegate") ||
                                            annotations.contains("assistant_response")
+                    val isShieldedVoice = annotations.contains("is_shielded_voice") || annotations.contains("VOICE_NOTE")
+                    val isUnshieldedForAi = annotations.contains("unshielded_for_ai")
+                    val isDisclosureReceipt = annotations.contains("disclosure_receipt_received")
+                    val isHumanOnly = annotations.contains("HUMAN_ONLY") || isShieldedVoice || _state.value.isHumanOnlyE2EEMode
 
                     val (endpointType, provenanceType) = when {
                         isGhostwritten -> EndpointType.HUMAN_DIRECT to MeshProvenanceType.HUMAN_DIRECT
@@ -306,6 +315,16 @@ class ConversationPresenter(
                         isHumanOnly -> EndpointType.HUMAN_DIRECT to MeshProvenanceType.HUMAN_ONLY_E2EE
                         else -> EndpointType.HUMAN_DIRECT to MeshProvenanceType.HUMAN_DIRECT
                     }
+
+                    val audioPlayback = if (isShieldedVoice) {
+                        AudioPlaybackUiState(
+                            audioUrl = "voice_${stored.id}",
+                            durationMs = 4200L,
+                            currentPositionMs = 0L,
+                            isPlaying = false,
+                            amplitudes = listOf(0.2f, 0.5f, 0.8f, 0.4f, 0.9f, 0.6f, 0.3f)
+                        )
+                    } else null
 
                     TimelineItemUiModel.Message(
                         id = stored.id,
@@ -324,8 +343,27 @@ class ConversationPresenter(
                         privacyLevel = if (isHumanOnly) PrivacyLevel.HUMAN_ONLY else PrivacyLevel.AGENT_ACCESSIBLE,
                         naturalText = stored.plaintext,
                         cueWords = if (isHumanOnly) emptyList() else listOf(stored.plaintext.take(15)),
+                        audioPlayback = audioPlayback,
                         isDelivered = stored.status == MessageStatus.DELIVERED || stored.status == MessageStatus.SENT_RELAY,
-                        isRead = true
+                        isRead = true,
+                        attachments = if (isShieldedVoice) {
+                            listOf(
+                                AttachmentPayload(
+                                    id = "att_${stored.id}",
+                                    fileName = "voice_memo.ogg",
+                                    mimeType = "audio/ogg",
+                                    sizeBytes = 14200L,
+                                    sha256Hex = "sha256_mock",
+                                    type = AttachmentType.VOICE_NOTE,
+                                    durationMs = 4200L
+                                )
+                            )
+                        } else emptyList(),
+                        isShieldedVoice = isShieldedVoice,
+                        shieldedSttTranscript = if (isShieldedVoice) stored.plaintext else null,
+                        isSttVisible = !hiddenSttIds.contains(stored.id),
+                        isUnshieldedForAi = isUnshieldedForAi,
+                        disclosureReceiptReceived = isDisclosureReceipt
                     )
                 }
                 val nonMessages = _state.value.items.filter { it !is TimelineItemUiModel.Message }
@@ -423,8 +461,10 @@ class ConversationPresenter(
 
         scope.launch {
             // Context window: up to 6 recent turns mapped to Aidos conversation turns
+            // Sealed turns are strictly quarantined from AI models unless recipient explicitly unshielded them
             val recentTurns = _state.value.items
                 .filterIsInstance<TimelineItemUiModel.Message>()
+                .filter { it.privacyLevel == PrivacyLevel.AGENT_ACCESSIBLE || it.isUnshieldedForAi }
                 .takeLast(6)
                 .map { turn ->
                     val role = if (turn.provenanceType == MeshProvenanceType.AGENT_RUNNER) "assistant" else "user"
@@ -529,6 +569,140 @@ class ConversationPresenter(
                 } else item
             }
             s.copy(items = updated)
+        }
+    }
+
+    fun toggleSttVisibility(messageId: String) {
+        if (hiddenSttIds.contains(messageId)) {
+            hiddenSttIds.remove(messageId)
+        } else {
+            hiddenSttIds.add(messageId)
+        }
+        _state.update { s ->
+            val updated = s.items.map { item ->
+                if (item is TimelineItemUiModel.Message && item.id == messageId) {
+                    item.copy(isSttVisible = !hiddenSttIds.contains(messageId))
+                } else item
+            }
+            s.copy(items = updated)
+        }
+    }
+
+    fun unshieldMessageForAi(messageId: String) {
+        scope.launch {
+            if (session != null) {
+                val contact = _state.value.contact
+                session.unshieldMessageForAi(messageId, contact?.mailboxId)
+            } else {
+                _state.update { s ->
+                    val updated = s.items.map { item ->
+                        if (item is TimelineItemUiModel.Message && item.id == messageId) {
+                            item.copy(isUnshieldedForAi = true)
+                        } else item
+                    }
+                    s.copy(items = updated)
+                }
+            }
+        }
+    }
+
+    fun sendSealedVoiceNote(audioBase64: String, durationMs: Long, transcript: String) {
+        val contact = _state.value.contact
+        val voiceAttachment = AttachmentPayload(
+            id = UUID.randomUUID().toString(),
+            fileName = "voice_${System.currentTimeMillis()}.ogg",
+            mimeType = "audio/ogg",
+            sizeBytes = (audioBase64.length * 3L / 4L).coerceAtLeast(1024L),
+            sha256Hex = "voice_sha256",
+            type = AttachmentType.VOICE_NOTE,
+            durationMs = durationMs,
+            inlineBase64 = audioBase64
+        )
+
+        if (session != null && contact != null) {
+            scope.launch {
+                session.sendMessage(
+                    recipientMailboxToken = contact.mailboxId,
+                    recipientPrincipalId = contact.principalId,
+                    recipientX25519PublicKeyHex = contact.x25519PublicKeyHex,
+                    plaintext = transcript,
+                    policy = PrivacyLevel.HUMAN_ONLY,
+                    conversationId = contact.mailboxId,
+                    recipientEndpointType = EndpointType.HUMAN_DIRECT,
+                    attachments = listOf(voiceAttachment),
+                    isShieldedVoice = true,
+                    shieldedSttTranscript = transcript
+                )
+            }
+        } else {
+            val now = System.currentTimeMillis()
+            val msgId = "voice_$now"
+            val newMsg = TimelineItemUiModel.Message(
+                id = msgId,
+                timestamp = now,
+                sender = EndpointIdentifier(currentUserId, EndpointType.HUMAN_DIRECT, currentDeviceKeyId),
+                provenanceType = MeshProvenanceType.HUMAN_ONLY_E2EE,
+                provenanceRecord = ProvenanceRecord(
+                    assertionLevel = AssertionLevel.ORIGINAL_HUMAN,
+                    signerKeyId = currentDeviceKeyId,
+                    signatureHex = "mock_enclave_sig"
+                ),
+                privacyLevel = PrivacyLevel.HUMAN_ONLY,
+                naturalText = transcript,
+                cueWords = emptyList(),
+                audioPlayback = AudioPlaybackUiState(
+                    audioUrl = "voice_$msgId",
+                    durationMs = durationMs,
+                    currentPositionMs = 0L,
+                    isPlaying = false,
+                    amplitudes = listOf(0.2f, 0.5f, 0.8f, 0.4f, 0.9f, 0.6f, 0.3f)
+                ),
+                attachments = listOf(voiceAttachment),
+                isShieldedVoice = true,
+                shieldedSttTranscript = transcript,
+                isSttVisible = true
+            )
+            _state.update { it.copy(items = it.items + newMsg) }
+        }
+    }
+
+    fun sendAttachment(file: AttachmentPayload, note: String = "") {
+        val isHumanOnly = _state.value.isHumanOnlyE2EEMode
+        val contact = _state.value.contact
+        val annotationsJson = if (isHumanOnly) """[{"type":"HUMAN_ONLY"}]""" else """[{"type":"AGENT_ACCESSIBLE"}]"""
+        if (session != null && contact != null) {
+            scope.launch {
+                session.sendMessage(
+                    recipientMailboxToken = contact.mailboxId,
+                    recipientPrincipalId = contact.principalId,
+                    recipientX25519PublicKeyHex = contact.x25519PublicKeyHex,
+                    plaintext = note.ifBlank { "Sent attachment: ${file.fileName}" },
+                    policy = if (isHumanOnly) PrivacyLevel.HUMAN_ONLY else PrivacyLevel.AGENT_ACCESSIBLE,
+                    conversationId = contact.mailboxId,
+                    recipientEndpointType = EndpointType.HUMAN_DIRECT,
+                    annotationsJson = annotationsJson,
+                    attachments = listOf(file)
+                )
+            }
+        } else {
+            val now = System.currentTimeMillis()
+            val msgId = "file_$now"
+            val newMsg = TimelineItemUiModel.Message(
+                id = msgId,
+                timestamp = now,
+                sender = EndpointIdentifier(currentUserId, EndpointType.HUMAN_DIRECT, currentDeviceKeyId),
+                provenanceType = if (isHumanOnly) MeshProvenanceType.HUMAN_ONLY_E2EE else MeshProvenanceType.HUMAN_DIRECT,
+                provenanceRecord = ProvenanceRecord(
+                    assertionLevel = AssertionLevel.ORIGINAL_HUMAN,
+                    signerKeyId = currentDeviceKeyId,
+                    signatureHex = "mock_sig"
+                ),
+                privacyLevel = if (isHumanOnly) PrivacyLevel.HUMAN_ONLY else PrivacyLevel.AGENT_ACCESSIBLE,
+                naturalText = note.ifBlank { "Sent attachment: ${file.fileName}" },
+                cueWords = emptyList(),
+                attachments = listOf(file)
+            )
+            _state.update { it.copy(items = it.items + newMsg) }
         }
     }
 }

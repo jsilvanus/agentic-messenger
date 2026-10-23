@@ -5,6 +5,8 @@ import com.agenticmessenger.client.identity.ClientIdentity
 import com.agenticmessenger.client.network.AmpConnectionState
 import com.agenticmessenger.client.storage.SqliteStorage
 import com.agenticmessenger.core.model.AssertionLevel
+import com.agenticmessenger.core.model.AttachmentPayload
+import com.agenticmessenger.core.model.AttachmentType
 import com.agenticmessenger.core.model.EndpointIdentifier
 import com.agenticmessenger.core.model.EndpointType
 import com.agenticmessenger.core.model.EnvelopePayload
@@ -492,5 +494,130 @@ class AmpUiTest {
         val triggeredAiTurn = updatedItems[2] as TimelineItemUiModel.Message
         assertEquals(MeshProvenanceType.AGENT_RUNNER, triggeredAiTurn.provenanceType)
         assertEquals("Aidos response: 3:00 PM looks great!", triggeredAiTurn.naturalText)
+    }
+
+    @Test
+    fun testSealedVoiceNoteAndRecipientSttOptOut() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(testDispatcher)
+
+        val presenter = ConversationPresenter(
+            scope = scope,
+            currentUserId = "did:aidos:alice",
+            currentDeviceKeyId = "key_alice_phone"
+        )
+
+        // Send a sealed voice note with authentic audio and local transcript
+        presenter.sendSealedVoiceNote(
+            audioBase64 = "T2dnUwACAAAAAAAAAAAAAAA...",
+            durationMs = 4500L,
+            transcript = "Secret voice memo: we are merging the branch now."
+        )
+
+        val items = presenter.state.value.items
+        assertEquals(1, items.size)
+        val voiceMsg = items.first() as TimelineItemUiModel.Message
+
+        assertEquals(PrivacyLevel.HUMAN_ONLY, voiceMsg.privacyLevel)
+        assertTrue(voiceMsg.isShieldedVoice)
+        assertEquals("Secret voice memo: we are merging the branch now.", voiceMsg.shieldedSttTranscript)
+        assertNotNull(voiceMsg.audioPlayback)
+        assertEquals(4500L, voiceMsg.audioPlayback?.durationMs)
+        assertTrue(voiceMsg.isSttVisible)
+        assertEquals(1, voiceMsg.attachments.size)
+        assertEquals(AttachmentType.VOICE_NOTE, voiceMsg.attachments.first().type)
+
+        // Recipient opts out / toggles STT visibility
+        presenter.toggleSttVisibility(voiceMsg.id)
+        val toggledMsg = presenter.state.value.items.first() as TimelineItemUiModel.Message
+        assertFalse(toggledMsg.isSttVisible, "Recipient opted out of transcript display")
+
+        // Recipient re-enables STT
+        presenter.toggleSttVisibility(voiceMsg.id)
+        val reenabledMsg = presenter.state.value.items.first() as TimelineItemUiModel.Message
+        assertTrue(reenabledMsg.isSttVisible)
+    }
+
+    @Test
+    fun testRecipientUnshieldForAiAndDisclosureReceipt() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(testDispatcher)
+
+        var aiWasCalledWithPrompt = false
+
+        val fakeAiClient = object : OpenAiClient() {
+            override suspend fun chatCompletion(
+                config: OpenAiConfig,
+                messages: List<OpenAiMessage>
+            ): Result<String> {
+                aiWasCalledWithPrompt = true
+                return Result.success("Aidos response: I reviewed the context.")
+            }
+        }
+
+        val sealedMessage = TimelineItemUiModel.Message(
+            id = "msg_sealed_101",
+            timestamp = 1000L,
+            sender = EndpointIdentifier("did:aidos:bob", EndpointType.HUMAN_DIRECT, "key_bob"),
+            provenanceType = MeshProvenanceType.HUMAN_ONLY_E2EE,
+            provenanceRecord = ProvenanceRecord(AssertionLevel.ORIGINAL_HUMAN, "key_bob", "sig_bob"),
+            privacyLevel = PrivacyLevel.HUMAN_ONLY,
+            naturalText = "Extremely confidential salary terms: \$180k.",
+            isShieldedVoice = false,
+            isUnshieldedForAi = false
+        )
+
+        val presenter = ConversationPresenter(
+            scope = scope,
+            currentUserId = "did:aidos:alice",
+            currentDeviceKeyId = "key_alice",
+            initialItems = listOf(sealedMessage),
+            openAiClient = fakeAiClient
+        )
+
+        // Before unshielding: asking AI must strictly NOT include the sealed message in context
+        presenter.askAi("What did Bob say?")
+        testScheduler.advanceUntilIdle()
+
+        // Recipient explicitly unshields the sealed message for their AI assistant
+        presenter.unshieldMessageForAi("msg_sealed_101")
+        testScheduler.advanceUntilIdle()
+
+        val unshieldedMsg = presenter.state.value.items.first { it.id == "msg_sealed_101" } as TimelineItemUiModel.Message
+        assertTrue(unshieldedMsg.isUnshieldedForAi, "Message should now be marked unshielded for local AI")
+        // Note: privacyLevel remains HUMAN_ONLY at cryptographic origin, but locally unshielded for recipient AI
+        assertEquals(PrivacyLevel.HUMAN_ONLY, unshieldedMsg.privacyLevel)
+    }
+
+    @Test
+    fun testFileAttachmentSending() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(testDispatcher)
+
+        val presenter = ConversationPresenter(
+            scope = scope,
+            currentUserId = "did:aidos:alice",
+            currentDeviceKeyId = "key_alice"
+        )
+
+        val pdfAttachment = AttachmentPayload(
+            id = "att_doc_1",
+            fileName = "spec.pdf",
+            mimeType = "application/pdf",
+            sizeBytes = 2048576L,
+            sha256Hex = "abc123sha",
+            type = AttachmentType.DOCUMENT,
+            blobUri = "amp://blobs/att_doc_1"
+        )
+
+        presenter.sendAttachment(pdfAttachment, "Please review the updated specification.")
+
+        val items = presenter.state.value.items
+        assertEquals(1, items.size)
+        val docMsg = items.first() as TimelineItemUiModel.Message
+        assertEquals("Please review the updated specification.", docMsg.naturalText)
+        assertEquals(1, docMsg.attachments.size)
+        assertEquals("spec.pdf", docMsg.attachments.first().fileName)
+        assertEquals(AttachmentType.DOCUMENT, docMsg.attachments.first().type)
     }
 }

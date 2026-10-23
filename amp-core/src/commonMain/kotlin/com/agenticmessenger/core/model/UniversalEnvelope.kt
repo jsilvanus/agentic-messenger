@@ -70,9 +70,40 @@ data class TypedAnnotation(
 )
 
 @Serializable
+enum class AttachmentType {
+    VOICE_NOTE,
+    DOCUMENT,
+    IMAGE,
+    GENERIC_FILE
+}
+
+@Serializable
+data class AttachmentPayload(
+    val id: String,                         // UUID
+    val fileName: String,
+    val mimeType: String,                   // e.g. "audio/ogg", "audio/wav", "application/pdf"
+    val sizeBytes: Long,
+    val sha256Hex: String,
+    val type: AttachmentType = AttachmentType.GENERIC_FILE,
+    val durationMs: Long? = null,           // for audio/voice notes
+    val inlineBase64: String? = null,       // for inline payload (voice notes, small files < 1MB)
+    val blobUri: String? = null,            // for out-of-band encrypted blobs (larger files)
+    val blobDecryptionKeyHex: String? = null // symmetric key if hosted out-of-band
+)
+
+@Serializable
+data class DisclosureReceiptRecord(
+    val messageId: String,
+    val discloserPrincipalId: String,
+    val timestamp: Long = System.currentTimeMillis(),
+    val notice: String = "Unshielded by recipient for local AI assistant"
+)
+
+@Serializable
 data class EnvelopePayload(
     val naturalLanguage: String,
-    val structuredAnnotations: List<TypedAnnotation> = emptyList()
+    val structuredAnnotations: List<TypedAnnotation> = emptyList(),
+    val attachments: List<AttachmentPayload> = emptyList()
 )
 
 @Serializable
