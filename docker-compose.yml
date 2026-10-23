@@ -19,12 +19,22 @@ services:
       - ./data/versity-iam:/data/iam
       - ./data/versity-versioning:/data/versioning
 
-  # Agentic Messenger Blind Relay configured with S3-compatible blob storage
+  # Redis: Distributed Pub/Sub for cross-node real-time routing & shared queue
+  redis:
+    image: redis:7-alpine
+    container_name: amp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis-data:/data
+
+  # Blind Relay Node 1 (Port 8080)
   amp-server:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: amp-relay-server
+    container_name: amp-relay-node-1
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -39,7 +49,40 @@ services:
       - S3_ACCESS_KEY=ampaccesskey
       - S3_SECRET_KEY=ampsecretkey123
       - S3_FORCE_PATH_STYLE=true
+      - QUEUE_BACKEND=redis
+      - PUBSUB_BACKEND=redis
+      - REDIS_URL=redis://redis:6379
     volumes:
-      - ./data/relay-db:/app/data
+      - ./data/relay-db-node1:/app/data
     depends_on:
       - versitygw
+      - redis
+
+  # Blind Relay Node 2 (Port 8081) - Proves horizontal load-balancing & cross-node fanout
+  amp-server-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: amp-relay-node-2
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      - RELAY_PORT=8080
+      - RELAY_HOST=0.0.0.0
+      - RELAY_DB_PATH=/app/data/blind_relay.db
+      - STORAGE_BACKEND=s3
+      - S3_ENDPOINT=http://versitygw:7070
+      - S3_BUCKET=amp-blobs
+      - S3_REGION=us-east-1
+      - S3_ACCESS_KEY=ampaccesskey
+      - S3_SECRET_KEY=ampsecretkey123
+      - S3_FORCE_PATH_STYLE=true
+      - QUEUE_BACKEND=redis
+      - PUBSUB_BACKEND=redis
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./data/relay-db-node2:/app/data
+    depends_on:
+      - versitygw
+      - redis
