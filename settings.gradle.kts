@@ -16,5 +16,6 @@ dependencyResolutionManagement {
 rootProject.name = "agentic-messenger"
 
 include(":amp-core")
+include(":amp-crypto")
 include(":amp-server")
 include(":amp-ui")
