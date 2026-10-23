@@ -362,9 +362,9 @@ fun main() = application {
     var sharedAiConfig by remember {
         mutableStateOf(
             OpenAiConfig(
-                host = System.getenv("OPENAI_HOST") ?: "localhost",
+                host = System.getenv("OPENAI_HOST") ?: "127.0.0.1",
                 port = System.getenv("OPENAI_PORT")?.toIntOrNull() ?: 11434, // Default Ollama port
-                model = System.getenv("OPENAI_MODEL") ?: "llama3",
+                model = System.getenv("OPENAI_MODEL") ?: "qwen2.5:7b",
                 isEnabled = true
             )
         )
@@ -494,3 +494,4 @@ fun main() = application {
         )
     }
 }
+
