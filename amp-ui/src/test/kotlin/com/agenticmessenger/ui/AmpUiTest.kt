@@ -20,6 +20,9 @@ import com.agenticmessenger.relay.registry.KeyPackageRegistry
 import com.agenticmessenger.relay.router.MailboxRouter
 import com.agenticmessenger.relay.service.RelayService
 import com.agenticmessenger.relay.storage.EncryptedBlobStorage
+import com.agenticmessenger.ui.ai.OpenAiClient
+import com.agenticmessenger.ui.ai.OpenAiConfig
+import com.agenticmessenger.ui.ai.OpenAiMessage
 import com.agenticmessenger.ui.generative.GenerativeUiRegistry
 import com.agenticmessenger.ui.model.ContactFilter
 import com.agenticmessenger.ui.model.ContactUiModel
@@ -440,5 +443,54 @@ class AmpUiTest {
             kr.close()
             tempDir.toFile().deleteRecursively()
         }
+    }
+
+    @Test
+    fun testConversationPresenterAiCopilotIntegration() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(testDispatcher)
+
+        val fakeAiClient = object : OpenAiClient() {
+            override suspend fun chatCompletion(
+                config: OpenAiConfig,
+                messages: List<OpenAiMessage>
+            ): Result<String> {
+                return Result.success("Aidos response: 3:00 PM looks great!")
+            }
+        }
+
+        val presenter = ConversationPresenter(
+            scope = scope,
+            currentUserId = "did:aidos:john",
+            currentDeviceKeyId = "key_john_phone",
+            openAiClient = fakeAiClient
+        )
+
+        // Directly ask AI copilot
+        presenter.askAi("Summarize unread messages")
+        testScheduler.advanceUntilIdle()
+
+        val items = presenter.state.value.items
+        assertTrue(items.isNotEmpty())
+        val aiTurn = items.last() as TimelineItemUiModel.Message
+        assertEquals(MeshProvenanceType.AGENT_RUNNER, aiTurn.provenanceType)
+        assertEquals("did:aidos:john:aidos", aiTurn.sender.principalId)
+        assertNotNull(aiTurn.localInferenceNote)
+        assertEquals("Aidos response: 3:00 PM looks great!", aiTurn.naturalText)
+
+        // Test @aidos trigger in sendMessage
+        presenter.onInputDraftChanged("@aidos suggest a meeting slot")
+        presenter.sendMessage()
+        testScheduler.advanceUntilIdle()
+
+        val updatedItems = presenter.state.value.items
+        assertEquals(3, updatedItems.size) // 1 initial AI turn + 1 human @aidos turn + 1 AI response turn
+        val humanTurn = updatedItems[1] as TimelineItemUiModel.Message
+        assertEquals("@aidos suggest a meeting slot", humanTurn.naturalText)
+        assertEquals(MeshProvenanceType.HUMAN_DIRECT, humanTurn.provenanceType)
+
+        val triggeredAiTurn = updatedItems[2] as TimelineItemUiModel.Message
+        assertEquals(MeshProvenanceType.AGENT_RUNNER, triggeredAiTurn.provenanceType)
+        assertEquals("Aidos response: 3:00 PM looks great!", triggeredAiTurn.naturalText)
     }
 }

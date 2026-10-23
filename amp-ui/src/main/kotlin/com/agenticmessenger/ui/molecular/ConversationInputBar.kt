@@ -50,6 +50,7 @@ fun ConversationInputBar(
     onToggleHumanOnly: () -> Unit,
     modifier: Modifier = Modifier,
     onVoiceDictationTrigger: () -> Unit = {},
+    onAskAiTrigger: (() -> Unit)? = null,
     onSend: () -> Unit = {}
 ) {
     val lockBg = if (isHumanOnly) Color(0xFFB3261E) else Color.Transparent
@@ -161,6 +162,24 @@ fun ConversationInputBar(
                     text = "🎙️",
                     fontSize = 14.sp
                 )
+            }
+
+            // Ask Aidos / OpenAI-compliant AI Copilot Trigger
+            if (onAskAiTrigger != null) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f))
+                        .clickable { onAskAiTrigger() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "✨",
+                        fontSize = 14.sp
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(6.dp))

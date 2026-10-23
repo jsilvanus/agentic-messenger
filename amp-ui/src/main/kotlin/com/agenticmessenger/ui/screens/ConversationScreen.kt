@@ -63,7 +63,8 @@ fun ConversationScreen(
     currentUserId: String,
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
-    onVoiceDictationTrigger: () -> Unit = {}
+    onVoiceDictationTrigger: () -> Unit = {},
+    onAskAiTrigger: (() -> Unit)? = { presenter.askAi() }
 ) {
     val state by presenter.state.collectAsState()
     val contact = state.contact
@@ -146,6 +147,7 @@ fun ConversationScreen(
                 isHumanOnly = state.isHumanOnlyE2EEMode,
                 onToggleHumanOnly = { presenter.toggleHumanOnlyMode() },
                 onVoiceDictationTrigger = onVoiceDictationTrigger,
+                onAskAiTrigger = onAskAiTrigger,
                 onSend = { presenter.sendMessage() }
             )
         }
