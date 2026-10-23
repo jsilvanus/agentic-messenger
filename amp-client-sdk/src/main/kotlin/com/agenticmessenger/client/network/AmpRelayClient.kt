@@ -43,6 +43,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Resilient client connection manager to the AMP Blind Relay.
  * Handles WebSocket lifecycle, auto-reconnection with exponential backoff,
  * zero-knowledge mailbox dispatch, and end-to-end payload encryption/decryption.
+ * Supports Human-to-Human, Human-to-Agent, Agent-to-Human, and Agent-to-Agent communication.
  */
 class AmpRelayClient(
     val serverWsUrl: String,
@@ -158,6 +159,7 @@ class AmpRelayClient(
 
     /**
      * Encrypts and transmits a direct end-to-end encrypted message to a peer mailbox.
+     * Supports human recipients and AI agent delegates.
      *
      * @param recipientMailboxToken The blinded mailbox token of the recipient's relay queue.
      * @param recipientPrincipalId The DID or identifier of the recipient (e.g. "did:aidos:bob").
@@ -165,6 +167,9 @@ class AmpRelayClient(
      * @param plaintext The message content to encrypt.
      * @param policy The privacy level (AGENT_ACCESSIBLE or HUMAN_ONLY).
      * @param conversationId Optional conversation ID; defaults to recipient principal ID.
+     * @param messageId Unique message ID.
+     * @param recipientEndpointType Endpoint type for recipient (HUMAN_DIRECT, AGENT_DELEGATE).
+     * @param recipientAgentX25519PublicKeyHex Optional agent public key hex for dual-compartment encryption.
      * @return The unique message ID assigned to this dispatch.
      */
     suspend fun sendDirectMessage(
@@ -174,23 +179,37 @@ class AmpRelayClient(
         plaintext: String,
         policy: PrivacyLevel = PrivacyLevel.HUMAN_ONLY,
         conversationId: String = recipientPrincipalId,
-        messageId: String = UUID.randomUUID().toString()
+        messageId: String = UUID.randomUUID().toString(),
+        recipientEndpointType: EndpointType = EndpointType.HUMAN_DIRECT,
+        recipientAgentX25519PublicKeyHex: String? = null
     ): String {
         // 1. Encrypt payload with DualCompartmentEncryptor
-        val recipientKey = RecipientKey(
-            recipientId = recipientPrincipalId,
-            endpointType = EndpointType.HUMAN_DIRECT,
-            x25519PublicKey = recipientX25519PublicKeyHex.hexToByteArray()
+        val recipientKeys = mutableListOf(
+            RecipientKey(
+                recipientId = recipientPrincipalId,
+                endpointType = recipientEndpointType,
+                x25519PublicKey = recipientX25519PublicKeyHex.hexToByteArray()
+            )
         )
 
-        // Also add sender self so sender can decrypt their own message history if desired
-        val selfRecipientKey = identity.toRecipientKey()
-        val recipients = listOf(recipientKey, selfRecipientKey)
+        // If recipient has an agent delegate public key, include it in compartments
+        if (!recipientAgentX25519PublicKeyHex.isNullOrBlank()) {
+            recipientKeys.add(
+                RecipientKey(
+                    recipientId = "$recipientPrincipalId:agent",
+                    endpointType = EndpointType.AGENT_DELEGATE,
+                    x25519PublicKey = recipientAgentX25519PublicKeyHex.hexToByteArray()
+                )
+            )
+        }
+
+        // Also add sender self key so sender can decrypt their own message history
+        recipientKeys.add(identity.toRecipientKey())
 
         val encryptedEnvelope = DualCompartmentEncryptor.encrypt(
             plaintext = plaintext,
             policy = policy,
-            recipients = recipients
+            recipients = recipientKeys
         )
 
         val payloadCiphertext = json.encodeToString(DualCompartmentEnvelope.serializer(), encryptedEnvelope)
@@ -205,7 +224,8 @@ class AmpRelayClient(
 
         // 3. Transmit frame
         sendFrame(sendFrame)
-        logger.debug("Dispatched message '{}' to mailbox '{}'", messageId, recipientMailboxToken)
+        logger.debug("Dispatched message '{}' to mailbox '{}' (policy={}, senderEndpoint={})",
+            messageId, recipientMailboxToken, policy, identity.endpointType)
         return messageId
     }
 
@@ -271,9 +291,20 @@ class AmpRelayClient(
         try {
             // Decrypt payload
             val dualEnvelope = json.decodeFromString(DualCompartmentEnvelope.serializer(), deliver.payloadCiphertext)
+            val recipientIdToDecrypt = if (identity.endpointType == EndpointType.AGENT_DELEGATE) {
+                // If this client is an agent, decrypt with its agent recipient identity or principal
+                if (dualEnvelope.getCompartment("${identity.principalId}:agent") != null) {
+                    "${identity.principalId}:agent"
+                } else {
+                    identity.principalId
+                }
+            } else {
+                identity.principalId
+            }
+
             val decrypted = DualCompartmentEncryptor.decryptToString(
                 envelope = dualEnvelope,
-                recipientId = identity.principalId,
+                recipientId = recipientIdToDecrypt,
                 recipientPrivateKey = identity.x25519KeyPair.privateKey
             )
 

@@ -10,6 +10,7 @@ import com.agenticmessenger.client.network.AmpRelayClient
 import com.agenticmessenger.client.storage.MessageRepository
 import com.agenticmessenger.client.storage.OutboxQueue
 import com.agenticmessenger.client.storage.SqliteStorage
+import com.agenticmessenger.core.model.EndpointType
 import com.agenticmessenger.core.model.PrivacyLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,7 @@ import java.util.UUID
  * - End-to-end encrypted relay communication via AmpRelayClient.
  * - Local offline Outbox staging and automatic replay.
  * - Reactive conversation history powered by SQLite MessageRepository.
+ * - First-class support for Human and AI Agent participants.
  */
 class AmpSession(
     val identity: ClientIdentity,
@@ -89,7 +91,7 @@ class AmpSession(
     }
 
     /**
-     * Asynchronously sends a direct message:
+     * Asynchronously sends a direct message (human or agent):
      * 1. Saves to local message history as OUTBOUND with PENDING_OUTBOX status.
      * 2. Enqueues in local OutboxQueue for durability.
      * 3. If online, immediately dispatches to the relay and marks SENT_RELAY.
@@ -100,7 +102,10 @@ class AmpSession(
         recipientX25519PublicKeyHex: String,
         plaintext: String,
         policy: PrivacyLevel = PrivacyLevel.HUMAN_ONLY,
-        conversationId: String = recipientPrincipalId
+        conversationId: String = recipientPrincipalId,
+        recipientEndpointType: EndpointType = EndpointType.HUMAN_DIRECT,
+        recipientAgentX25519PublicKeyHex: String? = null,
+        annotationsJson: String? = null
     ): StoredMessage {
         val messageId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
@@ -113,7 +118,8 @@ class AmpSession(
             plaintext = plaintext,
             direction = MessageDirection.OUTBOUND,
             status = MessageStatus.PENDING_OUTBOX,
-            timestampMillis = now
+            timestampMillis = now,
+            annotationsJson = annotationsJson
         )
 
         val outboxItem = OutboxItem(
@@ -133,7 +139,11 @@ class AmpSession(
 
         // Attempt immediate dispatch if connected
         if (connectionState.value == AmpConnectionState.CONNECTED) {
-            dispatchOutboxItem(outboxItem)
+            dispatchOutboxItem(
+                item = outboxItem,
+                recipientEndpointType = recipientEndpointType,
+                recipientAgentX25519PublicKeyHex = recipientAgentX25519PublicKeyHex
+            )
         }
 
         return stored
@@ -149,7 +159,11 @@ class AmpSession(
         }
     }
 
-    private suspend fun dispatchOutboxItem(item: OutboxItem) {
+    private suspend fun dispatchOutboxItem(
+        item: OutboxItem,
+        recipientEndpointType: EndpointType = EndpointType.HUMAN_DIRECT,
+        recipientAgentX25519PublicKeyHex: String? = null
+    ) {
         try {
             outboxQueue.markInFlight(item.id)
             val policy = if (item.humanOnly) PrivacyLevel.HUMAN_ONLY else PrivacyLevel.AGENT_ACCESSIBLE
@@ -160,7 +174,9 @@ class AmpSession(
                 plaintext = item.payloadPlaintext,
                 policy = policy,
                 conversationId = item.conversationId,
-                messageId = item.id
+                messageId = item.id,
+                recipientEndpointType = recipientEndpointType,
+                recipientAgentX25519PublicKeyHex = recipientAgentX25519PublicKeyHex
             )
             outboxQueue.markCompleted(item.id)
             messageRepo.updateStatus(item.id, MessageStatus.SENT_RELAY, relayMsgId)
