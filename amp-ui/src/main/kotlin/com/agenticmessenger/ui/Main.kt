@@ -53,6 +53,7 @@ import com.agenticmessenger.ui.ai.OpenAiConfig
 import com.agenticmessenger.ui.model.ContactUiModel
 import com.agenticmessenger.ui.model.PresenceState
 import com.agenticmessenger.ui.presenter.ConversationPresenter
+import com.agenticmessenger.ui.molecular.PersistentRedPill
 import com.agenticmessenger.ui.screens.ConversationScreen
 import com.agenticmessenger.ui.theme.AmpTheme
 import kotlinx.coroutines.CoroutineScope
@@ -255,7 +256,8 @@ fun DesktopMessengerWindow(
     onAiConfigChanged: (OpenAiConfig) -> Unit,
     openAiClient: OpenAiClient,
     scope: CoroutineScope,
-    title: String
+    title: String,
+    contacts: List<ContactUiModel> = emptyList()
 ) {
     val connectionState by session.connectionState.collectAsState()
     val isConnected = connectionState == AmpConnectionState.CONNECTED
@@ -303,6 +305,42 @@ fun DesktopMessengerWindow(
                 },
                 openAiClient = openAiClient,
                 scope = scope
+            )
+
+            // Persistent Red Pill: User-Level Orchestrator (Dictator style)
+            PersistentRedPill(
+                aiConfig = aiConfig,
+                contacts = contacts,
+                onSendMessageToContact = { contact, text ->
+                    try {
+                        session.sendMessage(
+                            recipientMailboxToken = contact.mailboxId,
+                            recipientPrincipalId = contact.principalId,
+                            recipientX25519PublicKeyHex = contact.x25519PublicKeyHex.ifEmpty { "e2ee_mock_key" },
+                            plaintext = text,
+                            policy = com.agenticmessenger.core.model.PrivacyLevel.AGENT_ACCESSIBLE,
+                            conversationId = contact.mailboxId,
+                            recipientEndpointType = com.agenticmessenger.core.model.EndpointType.HUMAN_DIRECT,
+                            annotationsJson = """[{"type":"orchestrator_turn","confidence":0.99}]"""
+                        )
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+                },
+                onFetchRecentMessages = { mailboxId, limit ->
+                    try {
+                        session.messageRepo.getMessages(mailboxId, limit).map { stored ->
+                            dev.aidos.amp.AmpConversationTurn(
+                                role = if (stored.senderId == identity.principalId) "user" else "assistant",
+                                text = stored.plaintext,
+                                senderId = stored.senderId
+                            )
+                        }
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                }
             )
 
             ConversationScreen(
@@ -425,7 +463,8 @@ fun main() = application {
             },
             openAiClient = openAiClient,
             scope = scope,
-            title = "Alice"
+            title = "Alice",
+            contacts = listOf(bobContact)
         )
     }
 
@@ -450,7 +489,8 @@ fun main() = application {
             },
             openAiClient = openAiClient,
             scope = scope,
-            title = "Bob"
+            title = "Bob",
+            contacts = listOf(aliceContact)
         )
     }
 }

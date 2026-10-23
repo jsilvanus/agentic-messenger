@@ -13,6 +13,8 @@ import com.agenticmessenger.core.model.EndpointType
 import com.agenticmessenger.core.model.PrivacyLevel
 import com.agenticmessenger.core.model.ProvenanceRecord
 import com.agenticmessenger.core.model.TypedAnnotation
+import com.agenticmessenger.agent.AmpAgentService
+import dev.aidos.amp.AmpConversationTurn
 import com.agenticmessenger.ui.ai.OpenAiClient
 import com.agenticmessenger.ui.ai.OpenAiConfig
 import com.agenticmessenger.ui.ai.OpenAiMessage
@@ -171,6 +173,42 @@ class ContactsPresenter(
 /**
  * Presenter for active Conversation thread.
  */
+
+/**
+ * Adapter bridging [OpenAiClient] to Aidos [ModelAdapter] for backwards compatibility and mock testing.
+ */
+class OpenAiClientModelAdapter(
+    private val client: OpenAiClient,
+    private val configProvider: () -> OpenAiConfig
+) : dev.aidos.kernel.ModelAdapter {
+    override val providerId: String = "openai-client"
+    override val modelId: String get() = configProvider().model
+    override val modelVersion: String = "1.0"
+    override val contextWindow: Int = 4096
+    override val isLocal: Boolean = true
+    override fun supportsNativeToolCalls(): Boolean = false
+
+    override suspend fun invoke(request: dev.aidos.kernel.ModelRequest): Result<dev.aidos.kernel.ModelResponse> {
+        val messages = request.messages.mapNotNull { turn ->
+            when (turn) {
+                is dev.aidos.kernel.Turn.System -> OpenAiMessage("system", turn.content)
+                is dev.aidos.kernel.Turn.User -> OpenAiMessage("user", turn.content.filterIsInstance<dev.aidos.kernel.ContentBlock.Text>().joinToString(" ") { it.text })
+                is dev.aidos.kernel.Turn.Assistant -> turn.text?.let { OpenAiMessage("assistant", it) }
+                is dev.aidos.kernel.Turn.ToolResult -> OpenAiMessage("user", turn.result.content.filterIsInstance<dev.aidos.kernel.ContentBlock.Text>().joinToString(" ") { it.text })
+            }
+        }
+        val res = client.chatCompletion(configProvider(), messages)
+        return res.map { text ->
+            dev.aidos.kernel.ModelResponse(
+                outputs = listOf(dev.aidos.kernel.TextOutput(text)),
+                stopReason = dev.aidos.kernel.StopReason.END_TURN,
+                usage = null,
+                model = null
+            )
+        }
+    }
+}
+
 class ConversationPresenter(
     private val scope: CoroutineScope,
     private val currentUserId: String,
@@ -179,8 +217,12 @@ class ConversationPresenter(
     initialItems: List<TimelineItemUiModel> = emptyList(),
     val session: AmpSession? = null,
     val openAiClient: OpenAiClient = OpenAiClient(),
-    var openAiConfig: OpenAiConfig = OpenAiConfig()
+    var openAiConfig: OpenAiConfig = OpenAiConfig(),
+    customAgentService: AmpAgentService? = null
 ) {
+    val agentService: AmpAgentService = customAgentService ?: AmpAgentService(
+        customAdapter = OpenAiClientModelAdapter(openAiClient) { openAiConfig }
+    )
     private val _state = MutableStateFlow(
         ConversationUiState(
             contact = initialContact,
@@ -330,22 +372,43 @@ class ConversationPresenter(
         }
 
         scope.launch {
-            val messages = mutableListOf(
-                OpenAiMessage(role = "system", content = openAiConfig.systemPrompt)
-            )
-
-            // Context window: up to 6 recent turns
+            // Context window: up to 6 recent turns mapped to Aidos conversation turns
             val recentTurns = _state.value.items
                 .filterIsInstance<TimelineItemUiModel.Message>()
                 .takeLast(6)
-            for (turn in recentTurns) {
-                val role = if (turn.provenanceType == MeshProvenanceType.AGENT_RUNNER) "assistant" else "user"
-                messages.add(OpenAiMessage(role = role, content = turn.naturalText))
-            }
-            messages.add(OpenAiMessage(role = "user", content = userPrompt))
+                .map { turn ->
+                    val role = if (turn.provenanceType == MeshProvenanceType.AGENT_RUNNER) "assistant" else "user"
+                    AmpConversationTurn(
+                        role = role,
+                        text = turn.naturalText,
+                        senderId = turn.sender.principalId
+                    )
+                }
 
-            val result = openAiClient.chatCompletion(openAiConfig, messages)
-            val replyText = result.getOrElse { "⚠️ [Aidos AI Error: ${it.message ?: "Endpoint unreachable"}]" }
+            val result = agentService.processTurn(
+                incomingMessage = userPrompt,
+                conversationHistory = recentTurns,
+                baseUrl = openAiConfig.baseUrl,
+                model = openAiConfig.model,
+                apiKey = openAiConfig.apiKey,
+            )
+
+            val (replyText, cueWords) = result.fold(
+                onSuccess = { turnResult ->
+                    val cues = mutableListOf<String>()
+                    for (toolCall in turnResult.executedToolCalls) {
+                        cues.add(toolCall.toolName)
+                    }
+                    if (cues.isEmpty()) {
+                        cues.add(turnResult.replyText.take(15))
+                    }
+                    Pair(turnResult.replyText, cues)
+                },
+                onFailure = { err ->
+                    Pair("⚠️ [Aidos AI Error: " + (err.message ?: "Endpoint unreachable") + "]", listOf("Error"))
+                }
+            )
+
             val now = System.currentTimeMillis()
             val contact = _state.value.contact
 
@@ -377,9 +440,9 @@ class ConversationPresenter(
                     ),
                     privacyLevel = PrivacyLevel.AGENT_ACCESSIBLE,
                     naturalText = replyText,
-                    cueWords = listOf(replyText.take(15)),
+                    cueWords = cueWords,
                     annotations = listOf(TypedAnnotation(type = "assistant_response", confidence = 0.98)),
-                    localInferenceNote = "Generated via ${openAiConfig.baseUrl} (${openAiConfig.model})"
+                    localInferenceNote = "Generated via " + openAiConfig.baseUrl + " (" + openAiConfig.model + ")"
                 )
                 _state.update { it.copy(items = it.items + aiMsg) }
             }
