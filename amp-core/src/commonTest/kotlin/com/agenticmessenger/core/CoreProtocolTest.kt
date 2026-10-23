@@ -193,5 +193,25 @@ class CoreProtocolTest {
         assertEquals("msg_sealed_01", decodedDisclosure.messageId)
         assertEquals("mb_recipient", decodedDisclosure.sourceMailbox)
         assertEquals("mb_sender", decodedDisclosure.destinationMailbox)
+
+        val delivery: RelayFrame = RelayFrame.DeliveryReceipt(
+            messageId = "msg_002",
+            sourceMailbox = "mb_recipient",
+            destinationMailbox = "mb_sender"
+        )
+        val deliveryJson = json.encodeToString(delivery)
+        val decodedDelivery = json.decodeFromString<RelayFrame>(deliveryJson)
+        assertTrue(decodedDelivery is RelayFrame.DeliveryReceipt)
+        assertEquals("msg_002", decodedDelivery.messageId)
+
+        val viewed: RelayFrame = RelayFrame.ViewedReceipt(
+            messageId = "msg_002",
+            sourceMailbox = "mb_recipient",
+            destinationMailbox = "mb_sender"
+        )
+        val viewedJson = json.encodeToString(viewed)
+        val decodedViewed = json.decodeFromString<RelayFrame>(viewedJson)
+        assertTrue(decodedViewed is RelayFrame.ViewedReceipt)
+        assertEquals("msg_002", decodedViewed.messageId)
     }
 }

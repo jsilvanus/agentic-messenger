@@ -8,5 +8,6 @@ enum class MessageStatus {
     SENDING,
     SENT_RELAY,
     DELIVERED,
+    VIEWED,
     FAILED
 }

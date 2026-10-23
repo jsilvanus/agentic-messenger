@@ -148,6 +148,31 @@ sealed class RelayFrame {
     ) : RelayFrame()
 
     /**
+     * Delivery signal confirming recipient device received the envelope.
+     */
+    @Serializable
+    @SerialName("DELIVERY_RECEIPT")
+    data class DeliveryReceipt(
+        val messageId: String,
+        val sourceMailbox: String,
+        val destinationMailbox: String,
+        val timestamp: Long = System.currentTimeMillis()
+    ) : RelayFrame()
+
+    /**
+     * Viewed signal confirming recipient opened and viewed the turn.
+     * Recipient can opt out of transmitting this signal.
+     */
+    @Serializable
+    @SerialName("VIEWED_RECEIPT")
+    data class ViewedReceipt(
+        val messageId: String,
+        val sourceMailbox: String,
+        val destinationMailbox: String,
+        val timestamp: Long = System.currentTimeMillis()
+    ) : RelayFrame()
+
+    /**
      * Protocol or server error frame.
      */
     @Serializable

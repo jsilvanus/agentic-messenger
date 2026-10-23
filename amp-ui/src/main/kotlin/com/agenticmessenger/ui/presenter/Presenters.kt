@@ -344,8 +344,9 @@ class ConversationPresenter(
                         naturalText = stored.plaintext,
                         cueWords = if (isHumanOnly) emptyList() else listOf(stored.plaintext.take(15)),
                         audioPlayback = audioPlayback,
-                        isDelivered = stored.status == MessageStatus.DELIVERED || stored.status == MessageStatus.SENT_RELAY,
-                        isRead = true,
+                        isDelivered = stored.status == MessageStatus.DELIVERED || stored.status == MessageStatus.VIEWED || stored.status == MessageStatus.SENT_RELAY,
+                        isRead = stored.status == MessageStatus.VIEWED,
+                        isViewed = stored.status == MessageStatus.VIEWED,
                         attachments = if (isShieldedVoice) {
                             listOf(
                                 AttachmentPayload(
@@ -368,7 +369,22 @@ class ConversationPresenter(
                 }
                 val nonMessages = _state.value.items.filter { it !is TimelineItemUiModel.Message }
                 _state.update { it.copy(items = mappedMessages + nonMessages) }
+
+                // Automatically dispatch ViewedReceipt for inbound messages if user has not opted out
+                if (_state.value.sendViewedReceipts && session != null) {
+                    storedMessages.filter { it.direction == MessageDirection.INBOUND && it.status != MessageStatus.VIEWED }.forEach { inbound ->
+                        session.markMessageViewed(inbound.id, mailboxId)
+                    }
+                }
             }
+        }
+    }
+
+    fun toggleSendViewedReceipts() {
+        _state.update { current ->
+            val next = !current.sendViewedReceipts
+            session?.isSendViewedReceiptsEnabled = next
+            current.copy(sendViewedReceipts = next)
         }
     }
 
