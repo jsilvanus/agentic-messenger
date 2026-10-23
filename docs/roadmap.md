@@ -22,17 +22,17 @@ flowchart LR
 ## Milestone 1: KMP Core Protocol & Policy Engine (`amp-core`)
 **Goal:** Deterministic Kotlin Multiplatform foundation for schemas, serialization, provenance, and policy evaluation.
 
-* [ ] **KMP Gradle Workspace:** Initialize root `build.gradle.kts` and `settings.gradle.kts` targeting JVM, Android, and Native/Desktop.
-* [ ] **Universal Agentic Envelope (UAE):**
+* [x] **KMP Gradle Workspace:** Initialize root `build.gradle.kts` and `settings.gradle.kts` targeting JVM, Android, and Native/Desktop.
+* [x] **Universal Agentic Envelope (UAE):**
   - Data classes with `kotlinx.serialization` for envelopes, routing headers, provenance records, and typed annotations.
   - JSON and CBOR binary serialization support.
-* [ ] **Deterministic Information Boundary Engine (IBP):**
+* [x] **Deterministic Information Boundary Engine (IBP):**
   - Policy evaluator matching queries against `allowedTopics` and `escrowedTopics`.
   - Zero-LLM deterministic security checks.
-* [ ] **Basic Crypto Interfaces (`amp-crypto`):**
+* [x] **Basic Crypto Interfaces (`amp-crypto`):**
   - Ed25519 signing/verification.
   - X25519 key agreement + AES-256-GCM symmetric encryption.
-* [ ] **Verification:** Kotlin Test suite running across JVM and Android verifying envelope serialization, signature checks, and policy matching.
+* [x] **Verification:** Kotlin Test suite running across JVM and Android verifying envelope serialization, signature checks, and policy matching.
 
 ---
 
