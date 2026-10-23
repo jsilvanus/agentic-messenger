@@ -92,6 +92,76 @@ class CoreProtocolTest {
     }
 
     @Test
+    fun testUniversalEnvelopeWithAttachments() {
+        val voiceAttachment = AttachmentPayload(
+            id = "att_voice_001",
+            fileName = "voice_note.ogg",
+            mimeType = "audio/ogg",
+            sizeBytes = 14200L,
+            sha256Hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            type = AttachmentType.VOICE_NOTE,
+            durationMs = 4200L,
+            inlineBase64 = "T2dnUwACAAAAAAAAAAAAAAA..."
+        )
+
+        val fileAttachment = AttachmentPayload(
+            id = "att_pdf_002",
+            fileName = "contract.pdf",
+            mimeType = "application/pdf",
+            sizeBytes = 1048576L,
+            sha256Hex = "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+            type = AttachmentType.DOCUMENT,
+            blobUri = "amp://blobs/att_pdf_002",
+            blobDecryptionKeyHex = "0123456789abcdef0123456789abcdef"
+        )
+
+        val envelope = UniversalEnvelope(
+            envelopeId = "env_voice_sealed",
+            conversationId = "conv_alice_bob",
+            epoch = 2L,
+            timestamp = 1729600500000L,
+            routing = RoutingHeader(
+                sender = EndpointIdentifier(
+                    principalId = "did:aidos:alice",
+                    endpointType = EndpointType.HUMAN_DIRECT,
+                    deviceKeyId = "key_alice_01"
+                ),
+                recipients = listOf(
+                    RecipientTarget(
+                        mailboxId = "mb_bob_secret"
+                    )
+                )
+            ),
+            provenance = ProvenanceRecord(
+                assertionLevel = AssertionLevel.ORIGINAL_HUMAN,
+                signerKeyId = "key_alice_01",
+                signatureHex = "sig_valid"
+            ),
+            policy = InformationBoundaryPolicy(
+                privacyLevel = PrivacyLevel.HUMAN_ONLY
+            ),
+            payload = EnvelopePayload(
+                naturalLanguage = "Here is the confidential voice memo and contract.",
+                attachments = listOf(voiceAttachment, fileAttachment)
+            )
+        )
+
+        val serialized = json.encodeToString(envelope)
+        val deserialized = json.decodeFromString<UniversalEnvelope>(serialized)
+
+        assertEquals(2, deserialized.payload.attachments.size)
+        val firstAtt = deserialized.payload.attachments[0]
+        assertEquals(AttachmentType.VOICE_NOTE, firstAtt.type)
+        assertEquals(4200L, firstAtt.durationMs)
+        assertEquals("voice_note.ogg", firstAtt.fileName)
+
+        val secondAtt = deserialized.payload.attachments[1]
+        assertEquals(AttachmentType.DOCUMENT, secondAtt.type)
+        assertEquals("contract.pdf", secondAtt.fileName)
+        assertEquals("amp://blobs/att_pdf_002", secondAtt.blobUri)
+    }
+
+    @Test
     fun testRelayFramePolymorphism() {
         val register: RelayFrame = RelayFrame.Register(mailboxId = "mb_test_999")
         val registerJson = json.encodeToString(register)
@@ -110,5 +180,18 @@ class CoreProtocolTest {
         assertTrue(decodedSend is RelayFrame.Send)
         assertEquals("msg_001", decodedSend.messageId)
         assertEquals(2, decodedSend.destinationMailboxes.size)
+
+        val disclosure: RelayFrame = RelayFrame.DisclosureReceipt(
+            messageId = "msg_sealed_01",
+            sourceMailbox = "mb_recipient",
+            destinationMailbox = "mb_sender",
+            notice = "Unshielded by recipient for local AI assistant"
+        )
+        val disclosureJson = json.encodeToString(disclosure)
+        val decodedDisclosure = json.decodeFromString<RelayFrame>(disclosureJson)
+        assertTrue(decodedDisclosure is RelayFrame.DisclosureReceipt)
+        assertEquals("msg_sealed_01", decodedDisclosure.messageId)
+        assertEquals("mb_recipient", decodedDisclosure.sourceMailbox)
+        assertEquals("mb_sender", decodedDisclosure.destinationMailbox)
     }
 }

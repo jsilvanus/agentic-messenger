@@ -132,6 +132,22 @@ sealed class RelayFrame {
     ) : RelayFrame()
 
     /**
+     * Recipient unshielded a sealed message for their local AI assistant.
+     * Informational audit receipt routed to original sender's mailbox.
+     * Sender client updates its status indicator ("Disclosed by recipient to local AI").
+     * The sender's copy itself is NEVER unshielded.
+     */
+    @Serializable
+    @SerialName("DISCLOSURE_RECEIPT")
+    data class DisclosureReceipt(
+        val messageId: String,
+        val sourceMailbox: String,            // recipient mailbox who unshielded
+        val destinationMailbox: String,       // original sender mailbox
+        val timestamp: Long = System.currentTimeMillis(),
+        val notice: String = "Unshielded by recipient for local AI assistant"
+    ) : RelayFrame()
+
+    /**
      * Protocol or server error frame.
      */
     @Serializable

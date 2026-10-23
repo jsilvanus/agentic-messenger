@@ -2,10 +2,12 @@ package com.agenticmessenger.ui.generative
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.agenticmessenger.core.model.AttachmentType
 import com.agenticmessenger.core.model.PrivacyLevel
 import com.agenticmessenger.core.model.UniversalEnvelope
 import com.agenticmessenger.ui.atomic.PrivacySealBadge
 import com.agenticmessenger.ui.atomic.ProvenanceBadge
+import com.agenticmessenger.ui.model.AudioPlaybackUiState
 import com.agenticmessenger.ui.model.DisclosureStatus
 import com.agenticmessenger.ui.model.MeshProvenanceType
 import com.agenticmessenger.ui.model.TimelineItemUiModel
@@ -72,6 +74,18 @@ object GenerativeUiRegistry {
             "Answered locally from cached envelope (zero network ping)"
         } else null
 
+        val voiceAttachment = envelope.payload.attachments.firstOrNull { it.type == AttachmentType.VOICE_NOTE }
+        val isShieldedVoice = (envelope.policy.privacyLevel == PrivacyLevel.HUMAN_ONLY && voiceAttachment != null)
+        val audioPlaybackState = if (voiceAttachment != null) {
+            AudioPlaybackUiState(
+                audioUrl = voiceAttachment.blobUri ?: "inline:${voiceAttachment.id}",
+                durationMs = voiceAttachment.durationMs ?: 3000L,
+                currentPositionMs = 0L,
+                isPlaying = false,
+                amplitudes = listOf(0.3f, 0.6f, 0.8f, 0.4f, 0.9f, 0.7f, 0.5f, 0.2f, 0.6f, 0.4f)
+            )
+        } else null
+
         return TimelineItemUiModel.Message(
             id = envelope.envelopeId,
             timestamp = envelope.timestamp,
@@ -82,7 +96,13 @@ object GenerativeUiRegistry {
             naturalText = envelope.payload.naturalLanguage,
             cueWords = cues,
             annotations = envelope.payload.structuredAnnotations,
-            localInferenceNote = localNotice
+            localInferenceNote = localNotice,
+            audioPlayback = audioPlaybackState,
+            attachments = envelope.payload.attachments,
+            isShieldedVoice = isShieldedVoice,
+            shieldedSttTranscript = if (isShieldedVoice) envelope.payload.naturalLanguage else null,
+            isSttVisible = true,
+            isUnshieldedForAi = false
         )
     }
 
@@ -97,7 +117,9 @@ object GenerativeUiRegistry {
         onApproveDisclosure: (requestId: String) -> Unit = {},
         onDeclineDisclosure: (requestId: String) -> Unit = {},
         onConfirmCalendar: () -> Unit = {},
-        onToggleAudio: () -> Unit = {}
+        onToggleAudio: () -> Unit = {},
+        onToggleStt: (messageId: String) -> Unit = {},
+        onUnshieldForAi: (messageId: String) -> Unit = {}
     ) {
         when (item) {
             is TimelineItemUiModel.Message -> {
@@ -106,7 +128,9 @@ object GenerativeUiRegistry {
                     message = item,
                     isSelf = isSelf,
                     modifier = modifier,
-                    onToggleAudio = onToggleAudio
+                    onToggleAudio = onToggleAudio,
+                    onToggleStt = onToggleStt,
+                    onUnshieldForAi = onUnshieldForAi
                 )
             }
             is TimelineItemUiModel.ProgressiveDisclosureRequest -> {

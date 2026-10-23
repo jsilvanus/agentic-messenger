@@ -10,8 +10,10 @@ import com.agenticmessenger.client.network.AmpRelayClient
 import com.agenticmessenger.client.storage.MessageRepository
 import com.agenticmessenger.client.storage.OutboxQueue
 import com.agenticmessenger.client.storage.SqliteStorage
+import com.agenticmessenger.core.model.AttachmentPayload
 import com.agenticmessenger.core.model.EndpointType
 import com.agenticmessenger.core.model.PrivacyLevel
+import com.agenticmessenger.core.protocol.RelayFrame
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,6 +30,7 @@ import java.util.UUID
  * - Local offline Outbox staging and automatic replay.
  * - Reactive conversation history powered by SQLite MessageRepository.
  * - First-class support for Human and AI Agent participants.
+ * - Sealed Voice Notes & Attachment progressive disclosure and receipts.
  */
 class AmpSession(
     val identity: ClientIdentity,
@@ -46,10 +49,11 @@ class AmpSession(
 
     private var outboxWorkerJob: Job? = null
     private var inboundListenerJob: Job? = null
+    private var receiptListenerJob: Job? = null
 
     /**
      * Starts the session: connects to the blind relay, starts the inbound listener,
-     * and sets up the outbox drain worker.
+     * sets up the outbox drain worker, and monitors disclosure receipts.
      */
     fun start() {
         relayClient.connect()
@@ -66,7 +70,8 @@ class AmpSession(
                     direction = MessageDirection.INBOUND,
                     status = MessageStatus.DELIVERED,
                     timestampMillis = incoming.timestamp,
-                    relayEnvelopeId = incoming.messageId
+                    relayEnvelopeId = incoming.messageId,
+                    annotationsJson = if (incoming.policy == PrivacyLevel.HUMAN_ONLY) """[{"type":"HUMAN_ONLY"}]""" else null
                 )
                 messageRepo.saveMessage(stored)
                 logger.debug("Received and persisted message '{}' for conversation '{}'", incoming.messageId, incoming.conversationId)
@@ -79,6 +84,66 @@ class AmpSession(
                 if (state == AmpConnectionState.CONNECTED) {
                     drainOutbox()
                 }
+            }
+        }
+
+        // 3. Raw frames listener for DISCLOSURE_RECEIPT
+        receiptListenerJob = scope.launch {
+            relayClient.rawFrames.collect { frame ->
+                if (frame is RelayFrame.DisclosureReceipt) {
+                    handleDisclosureReceipt(frame)
+                }
+            }
+        }
+    }
+
+    private suspend fun handleDisclosureReceipt(receipt: RelayFrame.DisclosureReceipt) {
+        val existing = messageRepo.getMessageById(receipt.messageId) ?: return
+        val currentJson = existing.annotationsJson ?: ""
+        val updatedJson = if (currentJson.isBlank()) {
+            """[{"type":"disclosure_receipt_received"}]"""
+        } else if (!currentJson.contains("disclosure_receipt_received")) {
+            currentJson.removeSuffix("]") + """,{"type":"disclosure_receipt_received"}]"""
+        } else {
+            currentJson
+        }
+        val updated = existing.copy(annotationsJson = updatedJson)
+        messageRepo.saveMessage(updated)
+        logger.info("Marked message '{}' as disclosed by recipient for local AI", receipt.messageId)
+    }
+
+    /**
+     * Recipient unshields a received sealed message for their local AI assistant.
+     * Updates local storage annotations, and transmits an informational DISCLOSURE_RECEIPT
+     * to the original sender's mailbox. The sender's copy itself is NOT unshielded.
+     */
+    suspend fun unshieldMessageForAi(messageId: String, senderMailboxToken: String? = null) {
+        val existing = messageRepo.getMessageById(messageId) ?: return
+        val currentJson = existing.annotationsJson ?: ""
+        val updatedJson = if (currentJson.isBlank()) {
+            """[{"type":"unshielded_for_ai"}]"""
+        } else if (!currentJson.contains("unshielded_for_ai")) {
+            currentJson.removeSuffix("]") + """,{"type":"unshielded_for_ai"}]"""
+        } else {
+            currentJson
+        }
+        val updated = existing.copy(annotationsJson = updatedJson)
+        messageRepo.saveMessage(updated)
+        logger.info("Unshielded message '{}' for local AI assistant", messageId)
+
+        val targetMailbox = senderMailboxToken ?: existing.conversationId
+        val receiptFrame = RelayFrame.DisclosureReceipt(
+            messageId = messageId,
+            sourceMailbox = identity.mailboxToken,
+            destinationMailbox = targetMailbox,
+            notice = "Unshielded by recipient for local AI assistant"
+        )
+        if (connectionState.value == AmpConnectionState.CONNECTED) {
+            try {
+                relayClient.sendFrame(receiptFrame)
+                logger.debug("Sent DisclosureReceipt frame for message '{}' to '{}'", messageId, targetMailbox)
+            } catch (e: Exception) {
+                logger.warn("Failed to dispatch disclosure receipt frame: {}", e.message)
             }
         }
     }
@@ -105,10 +170,21 @@ class AmpSession(
         conversationId: String = recipientPrincipalId,
         recipientEndpointType: EndpointType = EndpointType.HUMAN_DIRECT,
         recipientAgentX25519PublicKeyHex: String? = null,
-        annotationsJson: String? = null
+        annotationsJson: String? = null,
+        attachments: List<AttachmentPayload> = emptyList(),
+        isShieldedVoice: Boolean = false,
+        shieldedSttTranscript: String? = null
     ): StoredMessage {
         val messageId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
+
+        val effectiveAnnotations = buildAnnotationsJson(
+            baseJson = annotationsJson,
+            policy = policy,
+            isShieldedVoice = isShieldedVoice,
+            shieldedSttTranscript = shieldedSttTranscript,
+            attachmentsCount = attachments.size
+        )
 
         val stored = StoredMessage(
             id = messageId,
@@ -119,7 +195,7 @@ class AmpSession(
             direction = MessageDirection.OUTBOUND,
             status = MessageStatus.PENDING_OUTBOX,
             timestampMillis = now,
-            annotationsJson = annotationsJson
+            annotationsJson = effectiveAnnotations
         )
 
         val outboxItem = OutboxItem(
@@ -148,6 +224,33 @@ class AmpSession(
         }
 
         return stored
+    }
+
+    private fun buildAnnotationsJson(
+        baseJson: String?,
+        policy: PrivacyLevel,
+        isShieldedVoice: Boolean,
+        shieldedSttTranscript: String?,
+        attachmentsCount: Int
+    ): String {
+        val list = mutableListOf<String>()
+        if (policy == PrivacyLevel.HUMAN_ONLY) {
+            list.add(""""policy":"HUMAN_ONLY"""")
+        }
+        if (isShieldedVoice) {
+            list.add(""""is_shielded_voice":true""")
+        }
+        if (!shieldedSttTranscript.isNullOrBlank()) {
+            list.add(""""shielded_stt_transcript":${kotlinx.serialization.json.Json.encodeToString(kotlinx.serialization.serializer(), shieldedSttTranscript)}""")
+        }
+        if (attachmentsCount > 0) {
+            list.add(""""attachments_count":$attachmentsCount""")
+        }
+        if (baseJson.isNullOrBlank()) {
+            return if (list.isEmpty()) "" else "[{${list.joinToString(",")}}]"
+        }
+        if (list.isEmpty()) return baseJson
+        return baseJson.removeSuffix("]") + ",{${list.joinToString(",")}}]"
     }
 
     /**
@@ -191,6 +294,7 @@ class AmpSession(
     override fun close() {
         outboxWorkerJob?.cancel()
         inboundListenerJob?.cancel()
+        receiptListenerJob?.cancel()
         relayClient.close()
         storage.close()
     }
