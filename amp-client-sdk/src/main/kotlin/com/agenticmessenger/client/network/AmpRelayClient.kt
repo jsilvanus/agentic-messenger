@@ -173,10 +173,9 @@ class AmpRelayClient(
         recipientX25519PublicKeyHex: String,
         plaintext: String,
         policy: PrivacyLevel = PrivacyLevel.HUMAN_ONLY,
-        conversationId: String = recipientPrincipalId
+        conversationId: String = recipientPrincipalId,
+        messageId: String = UUID.randomUUID().toString()
     ): String {
-        val messageId = UUID.randomUUID().toString()
-
         // 1. Encrypt payload with DualCompartmentEncryptor
         val recipientKey = RecipientKey(
             recipientId = recipientPrincipalId,
