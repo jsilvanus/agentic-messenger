@@ -1,15 +1,18 @@
 package com.agenticmessenger.relay.router
 
+import com.agenticmessenger.relay.pubsub.PubSubBroker
 import io.ktor.websocket.DefaultWebSocketSession
 import io.ktor.websocket.Frame
-import io.ktor.websocket.readText
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
+import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
 
-class MailboxRouter {
+class MailboxRouter(
+    var pubSubBroker: PubSubBroker? = null
+) : Closeable {
 
     private val logger = LoggerFactory.getLogger(MailboxRouter::class.java)
 
@@ -19,6 +22,9 @@ class MailboxRouter {
     // Reverse map: session -> Set of mailbox_ids registered on this connection
     private val sessionToMailboxes = ConcurrentHashMap<DefaultWebSocketSession, CopyOnWriteArraySet<String>>()
 
+    // Maps mailbox_id -> Closeable subscription on pubSubBroker
+    private val mailboxSubscriptions = ConcurrentHashMap<String, Closeable>()
+
     private val lock = Mutex()
 
     /**
@@ -27,10 +33,24 @@ class MailboxRouter {
     suspend fun register(mailboxId: String, session: DefaultWebSocketSession) {
         lock.withLock {
             val sessions = mailboxToSessions.computeIfAbsent(mailboxId) { CopyOnWriteArraySet() }
+            val isFirst = sessions.isEmpty()
             sessions.add(session)
 
             val mailboxes = sessionToMailboxes.computeIfAbsent(session) { CopyOnWriteArraySet() }
             mailboxes.add(mailboxId)
+
+            val broker = pubSubBroker
+            if (isFirst && broker != null && !mailboxSubscriptions.containsKey(mailboxId)) {
+                try {
+                    val sub = broker.subscribe(mailboxId) { mb, payloadJson ->
+                        dispatch(mb, payloadJson)
+                    }
+                    mailboxSubscriptions[mailboxId] = sub
+                    logger.debug("Subscribed PubSubBroker for mailbox '{}'", mailboxId)
+                } catch (e: Exception) {
+                    logger.error("Failed to subscribe PubSubBroker for mailbox '{}': {}", mailboxId, e.message, e)
+                }
+            }
 
             logger.info("Registered session for mailbox '{}'. Active connections for mailbox: {}", mailboxId, sessions.size)
         }
@@ -41,9 +61,17 @@ class MailboxRouter {
      */
     suspend fun unregister(mailboxId: String, session: DefaultWebSocketSession) {
         lock.withLock {
-            mailboxToSessions[mailboxId]?.remove(session)
-            if (mailboxToSessions[mailboxId]?.isEmpty() == true) {
+            val sessions = mailboxToSessions[mailboxId]
+            sessions?.remove(session)
+            if (sessions.isNullOrEmpty()) {
                 mailboxToSessions.remove(mailboxId)
+                val sub = mailboxSubscriptions.remove(mailboxId)
+                try {
+                    sub?.close()
+                } catch (_: Exception) {}
+                try {
+                    pubSubBroker?.unsubscribe(mailboxId)
+                } catch (_: Exception) {}
             }
             sessionToMailboxes[session]?.remove(mailboxId)
         }
@@ -57,9 +85,17 @@ class MailboxRouter {
             val mailboxes = sessionToMailboxes.remove(session)
             if (mailboxes != null) {
                 for (mb in mailboxes) {
-                    mailboxToSessions[mb]?.remove(session)
-                    if (mailboxToSessions[mb]?.isEmpty() == true) {
+                    val sessions = mailboxToSessions[mb]
+                    sessions?.remove(session)
+                    if (sessions.isNullOrEmpty()) {
                         mailboxToSessions.remove(mb)
+                        val sub = mailboxSubscriptions.remove(mb)
+                        try {
+                            sub?.close()
+                        } catch (_: Exception) {}
+                        try {
+                            pubSubBroker?.unsubscribe(mb)
+                        } catch (_: Exception) {}
                     }
                 }
             }
@@ -110,5 +146,16 @@ class MailboxRouter {
             }
         }
         return delivered
+    }
+
+    override fun close() {
+        for ((_, sub) in mailboxSubscriptions) {
+            try {
+                sub.close()
+            } catch (_: Exception) {}
+        }
+        mailboxSubscriptions.clear()
+        mailboxToSessions.clear()
+        sessionToMailboxes.clear()
     }
 }

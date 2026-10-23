@@ -1,5 +1,10 @@
 package com.agenticmessenger.relay
 
+import com.agenticmessenger.relay.pubsub.LocalPubSubBroker
+import com.agenticmessenger.relay.pubsub.PubSubBroker
+import com.agenticmessenger.relay.pubsub.RedisPubSubBroker
+import com.agenticmessenger.relay.queue.RedisStoreAndForwardQueue
+import com.agenticmessenger.relay.queue.SqliteStoreAndForwardQueue
 import com.agenticmessenger.relay.queue.StoreAndForwardQueue
 import com.agenticmessenger.relay.registry.KeyPackageRegistry
 import com.agenticmessenger.relay.router.MailboxRouter
@@ -11,7 +16,10 @@ import com.agenticmessenger.relay.storage.S3StorageConfig
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import org.slf4j.LoggerFactory
+import redis.clients.jedis.JedisPool
+import redis.clients.jedis.JedisPoolConfig
 import java.io.File
+import java.net.URI
 
 fun main(args: Array<String>) {
     val logger = LoggerFactory.getLogger("BlindRelayLauncher")
@@ -20,6 +28,8 @@ fun main(args: Array<String>) {
     val host = System.getenv("RELAY_HOST") ?: "0.0.0.0"
     val dbPath = System.getenv("RELAY_DB_PATH") ?: "blind_relay.db"
     val storageBackend = System.getenv("STORAGE_BACKEND")?.lowercase() ?: "filesystem"
+    val queueBackend = System.getenv("QUEUE_BACKEND")?.lowercase() ?: "sqlite"
+    val pubsubBackend = System.getenv("PUBSUB_BACKEND")?.lowercase() ?: "local"
 
     val blobStorage: BlobStorage = if (storageBackend == "s3") {
         val endpoint = System.getenv("S3_ENDPOINT") ?: "http://localhost:7070"
@@ -49,13 +59,49 @@ fun main(args: Array<String>) {
         EncryptedBlobStorage(blobDir)
     }
 
-    logger.info("Initializing Agentic Messenger Blind Relay on {}:{}", host, port)
-    logger.info("Using SQLite database at '{}'", dbPath)
+    // Shared JedisPool if Redis backend is selected for queue or pubsub
+    val sharedJedisPool: JedisPool? = if (queueBackend == "redis" || pubsubBackend == "redis") {
+        val redisUrl = System.getenv("REDIS_URL")
+        val redisHost = System.getenv("REDIS_HOST") ?: "localhost"
+        val redisPort = System.getenv("REDIS_PORT")?.toIntOrNull() ?: 6379
+        val redisPassword = System.getenv("REDIS_PASSWORD")
 
-    val router = MailboxRouter()
-    val queue = StoreAndForwardQueue(dbPath)
+        if (!redisUrl.isNullOrBlank()) {
+            logger.info("Connecting to Redis at '{}'", redisUrl)
+            JedisPool(URI.create(redisUrl))
+        } else {
+            logger.info("Connecting to Redis at '{}:{}'", redisHost, redisPort)
+            if (redisPassword.isNullOrBlank()) {
+                JedisPool(JedisPoolConfig(), redisHost, redisPort, 2000)
+            } else {
+                JedisPool(JedisPoolConfig(), redisHost, redisPort, 2000, redisPassword)
+            }
+        }
+    } else {
+        null
+    }
+
+    val queue: StoreAndForwardQueue = if (queueBackend == "redis" && sharedJedisPool != null) {
+        logger.info("Using Redis Store-and-Forward Queue backend")
+        RedisStoreAndForwardQueue(sharedJedisPool)
+    } else {
+        logger.info("Using SQLite Store-and-Forward Queue at '{}'", dbPath)
+        SqliteStoreAndForwardQueue(dbPath)
+    }
+
+    val pubSubBroker: PubSubBroker = if (pubsubBackend == "redis" && sharedJedisPool != null) {
+        logger.info("Using Redis distributed PubSubBroker backend")
+        RedisPubSubBroker(sharedJedisPool)
+    } else {
+        logger.info("Using in-memory LocalPubSubBroker backend")
+        LocalPubSubBroker()
+    }
+
+    val router = MailboxRouter(pubSubBroker)
     val keyRegistry = KeyPackageRegistry(dbPath)
-    val relayService = RelayService(router, queue)
+    val relayService = RelayService(router, queue, pubSubBroker)
+
+    logger.info("Initializing Agentic Messenger Blind Relay on {}:{}", host, port)
 
     embeddedServer(Netty, port = port, host = host) {
         configureRelayServer(
@@ -63,6 +109,7 @@ fun main(args: Array<String>) {
             queue = queue,
             blobStorage = blobStorage,
             keyRegistry = keyRegistry,
+            pubSubBroker = pubSubBroker,
             relayService = relayService
         )
     }.start(wait = true)

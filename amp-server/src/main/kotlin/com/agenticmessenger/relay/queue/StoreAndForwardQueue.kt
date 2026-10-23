@@ -1,10 +1,12 @@
 package com.agenticmessenger.relay.queue
 
+import kotlinx.serialization.Serializable
 import java.io.Closeable
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
 
+@Serializable
 data class QueuedEnvelope(
     val messageId: String,
     val destinationMailbox: String,
@@ -14,9 +16,55 @@ data class QueuedEnvelope(
     val expiresAt: Long
 )
 
-class StoreAndForwardQueue(
+interface StoreAndForwardQueue : Closeable {
+    /**
+     * Enqueues an encrypted ciphertext envelope for an offline recipient.
+     * Default TTL is 14 days (14 * 24 * 3600 seconds) as specified in RFC / blueprints.
+     */
+    fun enqueue(
+        messageId: String,
+        destinationMailbox: String,
+        sourceMailbox: String?,
+        payloadCiphertext: String,
+        ttlSeconds: Long = 14L * 24 * 3600
+    ): Boolean
+
+    /**
+     * Fetches pending unexpired envelopes for a mailbox token, ordered by creation time.
+     */
+    fun fetchPending(destinationMailbox: String, limit: Int = 100): List<QueuedEnvelope>
+
+    /**
+     * Acknowledges receipt of a message.
+     * ZERO-KNOWLEDGE & EPHEMERAL GUARANTEE: Upon receiving delivery ACK,
+     * the server permanently and immediately deletes the ciphertext.
+     */
+    fun acknowledge(messageId: String, destinationMailbox: String): Boolean
+
+    /**
+     * Counts the total number of unexpired pending messages for a mailbox token.
+     */
+    fun countPending(destinationMailbox: String): Int
+
+    /**
+     * Background periodic sweep: permanently purges any envelopes past their TTL expiration.
+     */
+    fun purgeExpired(): Int
+
+    /**
+     * Total number of queued envelopes across all mailboxes.
+     */
+    fun totalQueueSize(): Int
+
+    companion object {
+        operator fun invoke(dbPath: String = "jdbc:sqlite:blind_relay.db"): StoreAndForwardQueue =
+            SqliteStoreAndForwardQueue(dbPath)
+    }
+}
+
+class SqliteStoreAndForwardQueue(
     private val dbPath: String = "jdbc:sqlite:blind_relay.db"
-) : Closeable {
+) : StoreAndForwardQueue {
 
     private val connection: Connection
 
@@ -63,17 +111,13 @@ class StoreAndForwardQueue(
         }
     }
 
-    /**
-     * Enqueues an encrypted ciphertext envelope for an offline recipient.
-     * Default TTL is 14 days (14 * 24 * 3600 seconds) as specified in RFC / blueprints.
-     */
     @Synchronized
-    fun enqueue(
+    override fun enqueue(
         messageId: String,
         destinationMailbox: String,
         sourceMailbox: String?,
         payloadCiphertext: String,
-        ttlSeconds: Long = 14L * 24 * 3600
+        ttlSeconds: Long
     ): Boolean {
         val now = System.currentTimeMillis()
         val expiresAt = now + (ttlSeconds * 1000)
@@ -100,11 +144,8 @@ class StoreAndForwardQueue(
         }
     }
 
-    /**
-     * Fetches pending unexpired envelopes for a mailbox token, ordered by creation time.
-     */
     @Synchronized
-    fun fetchPending(destinationMailbox: String, limit: Int = 100): List<QueuedEnvelope> {
+    override fun fetchPending(destinationMailbox: String, limit: Int): List<QueuedEnvelope> {
         val now = System.currentTimeMillis()
         val sql = """
             SELECT message_id, destination_mailbox, source_mailbox, payload_ciphertext, created_at, expires_at
@@ -140,13 +181,8 @@ class StoreAndForwardQueue(
         return results
     }
 
-    /**
-     * Acknowledges receipt of a message.
-     * ZERO-KNOWLEDGE & EPHEMERAL GUARANTEE: Upon receiving delivery ACK,
-     * the server permanently and immediately deletes the ciphertext from disk.
-     */
     @Synchronized
-    fun acknowledge(messageId: String, destinationMailbox: String): Boolean {
+    override fun acknowledge(messageId: String, destinationMailbox: String): Boolean {
         val sql = """
             DELETE FROM ephemeral_messages 
             WHERE message_id = ? AND destination_mailbox = ?
@@ -164,11 +200,8 @@ class StoreAndForwardQueue(
         }
     }
 
-    /**
-     * Counts the total number of unexpired pending messages for a mailbox token.
-     */
     @Synchronized
-    fun countPending(destinationMailbox: String): Int {
+    override fun countPending(destinationMailbox: String): Int {
         val now = System.currentTimeMillis()
         val sql = """
             SELECT COUNT(*) FROM ephemeral_messages
@@ -188,11 +221,8 @@ class StoreAndForwardQueue(
         }
     }
 
-    /**
-     * Background periodic sweep: permanently purges any envelopes past their TTL expiration.
-     */
     @Synchronized
-    fun purgeExpired(): Int {
+    override fun purgeExpired(): Int {
         val now = System.currentTimeMillis()
         val sql = "DELETE FROM ephemeral_messages WHERE expires_at <= ?"
         return try {
@@ -207,7 +237,7 @@ class StoreAndForwardQueue(
     }
 
     @Synchronized
-    fun totalQueueSize(): Int {
+    override fun totalQueueSize(): Int {
         val sql = "SELECT COUNT(*) FROM ephemeral_messages"
         return try {
             connection.createStatement().use { stmt ->
