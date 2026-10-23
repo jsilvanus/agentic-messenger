@@ -2,6 +2,20 @@
 
 An open, cryptographically secure messaging platform and protocol designed for a world where humans and AI agents collaborate as first-class communicators.
 
+## 🏛️ Trusted Component Registry (TCR) & Component Domain Ownership (D46)
+
+TCR stands for **Trusted Component Registry**. These pre-vetted, trusted components are used when generating the end goal: the **Desktop Generative UI** (in Aidos Desktop). While other projects are not Generative UI hosts, they author, create, and own their domain-specific UI components.
+
+It is likely that the TCR will at some point move into a specific separate repository, but for now, all UI components are owned by the apps that first came up with them:
+- **Agentic Messenger (`agentic-messenger` / AMP)**: Authoritative owner of **4-Party Conversation Mesh Protocols**, **Message Timelines** (`MessageBubble`, `ContactRow`, `DualViewToggle`, `CueTickerRow`), **Universal Envelopes (UAE)**, **Progressive Disclosure Approvals** (`ApprovalCard`, `CalendarCopilotCard`), and **Cryptographic Provenance Badges** (`ProvenanceBadge`, `PrivacySealBadge`).
+- **Dictator (`dictator`)**: Authoritative owner of **Text Editing & Document Editing Interfaces** (`DocumentInputSection`), **Continuous Document Flows**, the **Red Pill (Ember Caret Actor)** speech-to-text cursor (`PersistentRedPill`, `FloatingActorPill`), and **TCR Staging Overlays** (`PillConstellationOverlay`, `CadenceEngine`, `HappeningsHUD`, `TranscriptSplitDrawer`).
+- **Aidos (`aidos`)**: Authoritative owner of the **Desktop Generative UI Host Canvas**, **Core Agent Loop**, **Model Adapters**, **Tool Contracts**, and **Taint-Safe Execution**.
+
+### Cross-Repository Consumption:
+When Agentic Messenger (or AMP) uses **document editing** or **Red Pill tools**, it comes and fetches those components directly from **Dictator** rather than re-implementing them. Similarly, Aidos Desktop Generative UI imports AMP's conversation mesh and approval cards.
+
+See the canonical specification: [Aidos TCR Component Domain Owners (docs/TCR_COMPONENT_DOMAIN_OWNERS.md)](../aidos/docs/TCR_COMPONENT_DOMAIN_OWNERS.md).
+
 ## Subprojects
 
 - **`:amp-core`**: Universal Agentic Envelope (UAE) data models, polymorphic serialization (`kotlinx.serialization`), and blinded mailbox token generation (`HMAC-SHA256`).

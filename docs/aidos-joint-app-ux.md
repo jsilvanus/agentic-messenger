@@ -12,10 +12,14 @@ Traditional messaging apps (WhatsApp, Signal, Slack) model conversations strictl
 
 In **Agentic Messenger with Aidos**, a chat thread is a collaborative stream where **you, your contact, and your respective Aidos assistants** interact naturally in the same unified timeline.
 
-### Component Domain Ownership
-* **`agentic-messenger` (`amp-ui`) strictly owns this domain of components**: All multiplatform UI components for the Login flow, Contacts directory, 4-party Conversation Mesh, Dual-View toggle, Progressive Disclosure approval cards, and the `GenerativeUiRegistry` belong to and are developed in `agentic-messenger`.
-* **Aidos Desktop & Android Consumption**: Aidos embeds these atomic/molecular components directly on its infinite canvas and chat panes without duplication.
-* **Boundary with Dictator**: Audio voice capture and Red Pill recording UI planning are owned by `dictator`; `agentic-messenger` only provides the audio playback waveform visualizer and composer trigger slot.
+### Trusted Component Registry (TCR) & Domain Ownership (D46)
+TCR stands for **Trusted Component Registry**. These components serve as the pre-vetted catalog used when generating the end goal: the Desktop Generative UI. Projects in the ecosystem are not Generative UI hosts themselves, but they create and authoritatively own their domain-specific components:
+* **`agentic-messenger` (`amp-ui`) strictly owns the Conversation Mesh domain**: All multiplatform UI components for the Login flow, Contacts directory, 4-party Conversation Mesh, Dual-View toggle, Progressive Disclosure approval cards (`ApprovalCard`), Calendar Co-pilot cards, and `GenerativeUiRegistry` belong to and are developed in `agentic-messenger`.
+* **Boundary with Dictator (Document Editing & Red Pill)**: Dictator authoritatively owns text editing, document editing (`DocumentInputSection`), and the Red Pill speech-to-text cursor (`PersistentRedPill`). When AMP or Aidos Messenger uses document editing or Red Pill tools, it comes and fetches those components directly from `dictator`.
+* **Aidos Desktop Generative UI Consumption**: Aidos Desktop embeds these atomic and molecular components directly on its infinite spatial canvas and chat panes without duplication.
+* **Future Registry Evolution**: While the TCR will likely move into a dedicated repository in the future, components remain owned by their originating repositories.
+
+See canonical specification: [Aidos TCR Component Domain Owners (docs/TCR_COMPONENT_DOMAIN_OWNERS.md)](../../aidos/docs/TCR_COMPONENT_DOMAIN_OWNERS.md).
 
 ---
 
