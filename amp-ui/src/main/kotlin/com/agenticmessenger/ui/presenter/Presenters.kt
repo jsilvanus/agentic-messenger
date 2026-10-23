@@ -4,6 +4,7 @@ import com.agenticmessenger.client.AmpSession
 import com.agenticmessenger.client.identity.ClientIdentity
 import com.agenticmessenger.client.model.MessageDirection
 import com.agenticmessenger.client.model.MessageStatus
+import com.agenticmessenger.client.model.StoredMessage
 import com.agenticmessenger.client.network.AmpConnectionState
 import com.agenticmessenger.client.storage.SqliteStorage
 import com.agenticmessenger.core.crypto.BlindedMailbox
@@ -417,17 +418,33 @@ class ConversationPresenter(
         if (session != null && contact != null) {
             _state.update { it.copy(inputDraft = "") }
             scope.launch {
-                session.sendMessage(
-                    recipientMailboxToken = contact.mailboxId,
-                    recipientPrincipalId = contact.principalId,
-                    recipientX25519PublicKeyHex = contact.x25519PublicKeyHex,
-                    plaintext = text,
-                    policy = if (isHumanOnly) PrivacyLevel.HUMAN_ONLY else PrivacyLevel.AGENT_ACCESSIBLE,
-                    conversationId = contact.mailboxId
-                )
+                if (isAiCommand) {
+                    // Local AI copilot command: save user prompt to local repository history without sending over network relay
+                    val localPromptMsg = StoredMessage(
+                        id = UUID.randomUUID().toString(),
+                        conversationId = contact.mailboxId,
+                        senderId = currentUserId,
+                        recipientId = contact.principalId,
+                        plaintext = text,
+                        direction = MessageDirection.OUTBOUND,
+                        status = MessageStatus.SENT_RELAY,
+                        timestampMillis = now,
+                        annotationsJson = """[{"type":"orchestrator_turn"}]"""
+                    )
+                    session.messageRepo.saveMessage(localPromptMsg)
 
-                if (isAiCommand && !aiPrompt.isNullOrBlank()) {
-                    askAi(aiPrompt)
+                    if (!aiPrompt.isNullOrBlank()) {
+                        askAi(aiPrompt)
+                    }
+                } else {
+                    session.sendMessage(
+                        recipientMailboxToken = contact.mailboxId,
+                        recipientPrincipalId = contact.principalId,
+                        recipientX25519PublicKeyHex = contact.x25519PublicKeyHex,
+                        plaintext = text,
+                        policy = if (isHumanOnly) PrivacyLevel.HUMAN_ONLY else PrivacyLevel.AGENT_ACCESSIBLE,
+                        conversationId = contact.mailboxId
+                    )
                 }
             }
         } else {
@@ -519,16 +536,19 @@ class ConversationPresenter(
             val contact = _state.value.contact
 
             if (session != null && contact != null) {
-                session.sendMessage(
-                    recipientMailboxToken = contact.mailboxId,
-                    recipientPrincipalId = contact.principalId,
-                    recipientX25519PublicKeyHex = contact.x25519PublicKeyHex,
-                    plaintext = replyText,
-                    policy = PrivacyLevel.AGENT_ACCESSIBLE,
+                // Save AI copilot response to local repository history without broadcasting over network relay
+                val localAiMsg = StoredMessage(
+                    id = UUID.randomUUID().toString(),
                     conversationId = contact.mailboxId,
-                    recipientEndpointType = EndpointType.AGENT_DELEGATE,
+                    senderId = "$currentUserId:aidos",
+                    recipientId = currentUserId,
+                    plaintext = replyText,
+                    direction = MessageDirection.INBOUND,
+                    status = MessageStatus.DELIVERED,
+                    timestampMillis = now,
                     annotationsJson = """[{"type":"assistant_response","confidence":0.98}]"""
                 )
+                session.messageRepo.saveMessage(localAiMsg)
             } else {
                 val aiMsg = TimelineItemUiModel.Message(
                     id = "ai_$now",

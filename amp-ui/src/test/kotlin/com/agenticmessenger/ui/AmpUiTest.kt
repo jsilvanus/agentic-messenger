@@ -56,6 +56,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -494,6 +495,68 @@ class AmpUiTest {
         val triggeredAiTurn = updatedItems[2] as TimelineItemUiModel.Message
         assertEquals(MeshProvenanceType.AGENT_RUNNER, triggeredAiTurn.provenanceType)
         assertEquals("Aidos response: 3:00 PM looks great!", triggeredAiTurn.naturalText)
+    }
+
+    @Test
+    fun testAiCommandInActiveSessionKeptLocal() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(testDispatcher)
+
+        val fakeAiClient = object : OpenAiClient() {
+            override suspend fun chatCompletion(
+                config: OpenAiConfig,
+                messages: List<OpenAiMessage>
+            ): Result<String> {
+                return Result.success("Aidos response: 5:00 PM is free")
+            }
+        }
+
+        val storage = SqliteStorage.inMemory()
+        val aliceIdentity = ClientIdentity.generate("alice_device", "did:aidos:alice")
+        val aliceSession = AmpSession(
+            identity = aliceIdentity,
+            storage = storage,
+            relayWsUrl = "ws://localhost:9999"
+        )
+
+        val bobContact = ContactUiModel(
+            contactId = "bob",
+            displayName = "Bob",
+            handle = "did:aidos:bob",
+            mailboxId = "bob_mailbox_token",
+            presence = PresenceState.ONLINE,
+            isAidosActive = true,
+            principalId = "did:aidos:bob"
+        )
+
+        val presenter = ConversationPresenter(
+            scope = scope,
+            currentUserId = aliceIdentity.principalId,
+            currentDeviceKeyId = aliceIdentity.deviceId,
+            initialContact = bobContact,
+            session = aliceSession,
+            openAiClient = fakeAiClient
+        )
+
+        // Type @ai copilot command
+        presenter.onInputDraftChanged("@ai check my calendar")
+        presenter.sendMessage()
+
+        withTimeout(5000) {
+            while (presenter.state.value.items.filterIsInstance<TimelineItemUiModel.Message>().size < 2) {
+                delay(50)
+            }
+        }
+
+        // 1. Verify OutboxQueue is empty (no network transmission queued for Bob)
+        assertTrue(aliceSession.outboxQueue.peekPending().isEmpty())
+
+        // 2. Verify local conversation items contain user prompt and AI response
+        val items = presenter.state.value.items.filterIsInstance<TimelineItemUiModel.Message>()
+        assertEquals(2, items.size)
+        assertEquals("@ai check my calendar", items[0].naturalText)
+        assertEquals("Aidos response: 5:00 PM is free", items[1].naturalText)
+        assertEquals(MeshProvenanceType.AGENT_RUNNER, items[1].provenanceType)
     }
 
     @Test
