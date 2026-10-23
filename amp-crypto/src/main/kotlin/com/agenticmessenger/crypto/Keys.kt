@@ -74,10 +74,10 @@ data class RecipientKey(
     }
 }
 
-// Utility conversions
-internal fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(it) }
+// Public utility conversions
+fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(it) }
 
-internal fun String.hexToByteArray(): ByteArray {
+fun String.hexToByteArray(): ByteArray {
     val clean = if (length % 2 != 0) "0$this" else this
     val len = clean.length
     val data = ByteArray(len / 2)

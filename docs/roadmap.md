@@ -44,11 +44,11 @@ flowchart LR
   - Blinded mailbox router (`mailbox_id = HMAC(epoch, device_id)`).
   - Ephemeral store-and-forward queue with strict TTL and delivery ACKs (SQLite / PostgreSQL).
   - Client-encrypted blob store for voice dictation audio and attachments.
-* [ ] **KMP Client SDK (`amp-client-sdk`):**
+* [x] **KMP Client SDK (`amp-client-sdk`):**
   - Ktor WebSocket client with exponential backoff auto-reconnect and heartbeat.
   - Outbox queue: local message staging.
   - Working Memory engine: local annotation index powered by **SQLDelight** (type-safe SQLite across Android and Desktop).
-* [ ] **Verification:** Integration tests with two headless KMP SDK instances exchanging messages through the blind relay and verifying queue cleanup on delivery ACKs.
+* [x] **Verification:** Integration tests with two headless KMP SDK instances exchanging messages through the blind relay and verifying queue cleanup on delivery ACKs.
 
 ---
 
