@@ -52,7 +52,8 @@ flowchart LR
 
 ---
 
-## Milestone 3: Model Context Protocol (MCP) Server (`amp-mcp`)
+## Milestone 3: Model Context Protocol (MCP) Server (`amp-mcp`) [DEFERRED]
+**Status:** Deferred for later iteration (internal agent harness handles privacy boundaries; external MCP disclosure policies require deeper review).
 **Goal:** First-class participation for external and local AI agents.
 
 * [ ] **MCP Tools Implementation:**
