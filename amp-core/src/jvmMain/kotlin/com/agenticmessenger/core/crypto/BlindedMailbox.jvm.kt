@@ -4,7 +4,7 @@ import java.security.MessageDigest
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-object BlindedMailbox {
+actual object BlindedMailbox {
 
     private const val HMAC_ALGORITHM = "HmacSHA256"
 
@@ -12,7 +12,7 @@ object BlindedMailbox {
      * Computes the blinded mailbox token for a given device and epoch key.
      * mailbox_id = HMAC-SHA256(K_epoch, device_id)
      */
-    fun compute(epochKey: ByteArray, deviceId: String): String {
+    actual fun compute(epochKey: ByteArray, deviceId: String): String {
         val mac = Mac.getInstance(HMAC_ALGORITHM)
         val secretKey = SecretKeySpec(epochKey, HMAC_ALGORITHM)
         mac.init(secretKey)
@@ -23,7 +23,7 @@ object BlindedMailbox {
     /**
      * Computes the blinded mailbox token given a hex-encoded epoch key.
      */
-    fun compute(epochKeyHex: String, deviceId: String): String {
+    actual fun compute(epochKeyHex: String, deviceId: String): String {
         return compute(hexToBytes(epochKeyHex), deviceId)
     }
 
@@ -31,7 +31,7 @@ object BlindedMailbox {
      * Compute contact directory identity hash commitment:
      * identity_hash = SHA256(salt + handle_or_key)
      */
-    fun computeIdentityCommitment(salt: ByteArray, identifier: String): String {
+    actual fun computeIdentityCommitment(salt: ByteArray, identifier: String): String {
         val md = MessageDigest.getInstance("SHA-256")
         md.update(salt)
         md.update(identifier.toByteArray(Charsets.UTF_8))
