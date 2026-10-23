@@ -14,5 +14,6 @@ data class OutboxItem(
     val lastAttemptMillis: Long = 0L,
     val status: MessageStatus = MessageStatus.PENDING_OUTBOX,
     val createdAtMillis: Long = System.currentTimeMillis(),
-    val lastError: String? = null
+    val lastError: String? = null,
+    val recipientPrincipalId: String = conversationId
 )

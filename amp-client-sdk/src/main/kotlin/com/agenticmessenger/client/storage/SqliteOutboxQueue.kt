@@ -33,8 +33,8 @@ class SqliteOutboxQueue(
                 INSERT OR REPLACE INTO outbox (
                     id, conversation_id, recipient_mailbox_token, recipient_public_key_hex,
                     payload_plaintext, human_only, attempts, last_attempt_millis, status,
-                    created_at_millis, last_error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_at_millis, last_error, recipient_principal_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent()
             ).use { stmt ->
                 stmt.setString(1, item.id)
@@ -48,6 +48,7 @@ class SqliteOutboxQueue(
                 stmt.setString(9, item.status.name)
                 stmt.setLong(10, item.createdAtMillis)
                 stmt.setString(11, item.lastError)
+                stmt.setString(12, item.recipientPrincipalId)
                 stmt.executeUpdate()
             }
         }
@@ -60,7 +61,7 @@ class SqliteOutboxQueue(
                 """
                 SELECT id, conversation_id, recipient_mailbox_token, recipient_public_key_hex,
                        payload_plaintext, human_only, attempts, last_attempt_millis, status,
-                       created_at_millis, last_error
+                       created_at_millis, last_error, recipient_principal_id
                 FROM outbox
                 WHERE status = ?
                 ORDER BY created_at_millis ASC
@@ -155,7 +156,7 @@ class SqliteOutboxQueue(
                 """
                 SELECT id, conversation_id, recipient_mailbox_token, recipient_public_key_hex,
                        payload_plaintext, human_only, attempts, last_attempt_millis, status,
-                       created_at_millis, last_error
+                       created_at_millis, last_error, recipient_principal_id
                 FROM outbox WHERE id = ?
                 """.trimIndent()
             ).use { stmt ->
@@ -179,6 +180,12 @@ class SqliteOutboxQueue(
     }
 
     private fun mapRowToOutboxItem(rs: java.sql.ResultSet): OutboxItem {
+        val principalId = try {
+            rs.getString("recipient_principal_id")
+        } catch (_: Exception) {
+            null
+        } ?: rs.getString("conversation_id")
+
         return OutboxItem(
             id = rs.getString("id"),
             conversationId = rs.getString("conversation_id"),
@@ -190,7 +197,8 @@ class SqliteOutboxQueue(
             lastAttemptMillis = rs.getLong("last_attempt_millis"),
             status = MessageStatus.valueOf(rs.getString("status")),
             createdAtMillis = rs.getLong("created_at_millis"),
-            lastError = rs.getString("last_error")
+            lastError = rs.getString("last_error"),
+            recipientPrincipalId = principalId
         )
     }
 
@@ -223,13 +231,19 @@ class SqliteOutboxQueue(
                             last_attempt_millis INTEGER NOT NULL DEFAULT 0,
                             status TEXT NOT NULL,
                             created_at_millis INTEGER NOT NULL,
-                            last_error TEXT
+                            last_error TEXT,
+                            recipient_principal_id TEXT
                         );
                         """.trimIndent()
                     )
                     stmt.execute(
                         "CREATE INDEX IF NOT EXISTS idx_outbox_status_created ON outbox (status, created_at_millis);"
                     )
+                    try {
+                        stmt.execute("ALTER TABLE outbox ADD COLUMN recipient_principal_id TEXT;")
+                    } catch (_: Exception) {
+                        // Column already exists
+                    }
                 }
             }
         }

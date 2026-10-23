@@ -43,7 +43,9 @@ data class ContactUiModel(
     val unreadCount: Int = 0,
     val pendingDisclosureCount: Int = 0,
     val latestCueBadge: String? = null,
-    val latestSnippet: String? = null
+    val latestSnippet: String? = null,
+    val principalId: String = handle,
+    val x25519PublicKeyHex: String = ""
 )
 
 /**

@@ -1,5 +1,9 @@
 package com.agenticmessenger.ui
 
+import com.agenticmessenger.client.AmpSession
+import com.agenticmessenger.client.identity.ClientIdentity
+import com.agenticmessenger.client.network.AmpConnectionState
+import com.agenticmessenger.client.storage.SqliteStorage
 import com.agenticmessenger.core.model.AssertionLevel
 import com.agenticmessenger.core.model.EndpointIdentifier
 import com.agenticmessenger.core.model.EndpointType
@@ -10,6 +14,12 @@ import com.agenticmessenger.core.model.ProvenanceRecord
 import com.agenticmessenger.core.model.RoutingHeader
 import com.agenticmessenger.core.model.TypedAnnotation
 import com.agenticmessenger.core.model.UniversalEnvelope
+import com.agenticmessenger.relay.configureRelayServer
+import com.agenticmessenger.relay.queue.SqliteStoreAndForwardQueue
+import com.agenticmessenger.relay.registry.KeyPackageRegistry
+import com.agenticmessenger.relay.router.MailboxRouter
+import com.agenticmessenger.relay.service.RelayService
+import com.agenticmessenger.relay.storage.EncryptedBlobStorage
 import com.agenticmessenger.ui.generative.GenerativeUiRegistry
 import com.agenticmessenger.ui.model.ContactFilter
 import com.agenticmessenger.ui.model.ContactUiModel
@@ -21,10 +31,22 @@ import com.agenticmessenger.ui.model.TimelineItemUiModel
 import com.agenticmessenger.ui.presenter.ContactsPresenter
 import com.agenticmessenger.ui.presenter.ConversationPresenter
 import com.agenticmessenger.ui.presenter.LoginPresenter
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import java.net.ServerSocket
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -294,5 +316,129 @@ class AmpUiTest {
         assertTrue(item3 is TimelineItemUiModel.Message)
         assertEquals(MeshProvenanceType.HUMAN_ONLY_E2EE, item3.provenanceType)
         assertEquals(PrivacyLevel.HUMAN_ONLY, item3.privacyLevel)
+    }
+
+    @Test
+    fun testEndToEndConversationPresenterDualWindowMessaging() = runBlocking {
+        val tempDir = Files.createTempDirectory("amp_ui_test")
+        val port = ServerSocket(0).use { it.localPort }
+        val dbFile = tempDir.resolve("test_ui_relay.db").toFile()
+        val blobDir = tempDir.resolve("blobs").toFile()
+        blobDir.mkdirs()
+
+        val q = SqliteStoreAndForwardQueue("jdbc:sqlite:${dbFile.absolutePath}")
+        val blobStorage = EncryptedBlobStorage(blobDir)
+        val kr = KeyPackageRegistry("jdbc:sqlite:${dbFile.absolutePath}")
+        val router = MailboxRouter()
+        val relayService = RelayService(router, q)
+
+        val server = embeddedServer(Netty, port = port, host = "127.0.0.1") {
+            configureRelayServer(
+                router = router,
+                queue = q,
+                blobStorage = blobStorage,
+                keyRegistry = kr,
+                relayService = relayService
+            )
+        }.start(wait = false)
+
+        Thread.sleep(800)
+
+        val wsUrl = "ws://127.0.0.1:$port/ws/relay"
+        val testScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+        val aliceIdentity = ClientIdentity.generate("alice_test_dev", "did:aidos:alice")
+        val bobIdentity = ClientIdentity.generate("bob_test_dev", "did:aidos:bob")
+
+        val aliceStorage = SqliteStorage.inMemory()
+        val bobStorage = SqliteStorage.inMemory()
+
+        val aliceSession = AmpSession(identity = aliceIdentity, storage = aliceStorage, relayWsUrl = wsUrl)
+        val bobSession = AmpSession(identity = bobIdentity, storage = bobStorage, relayWsUrl = wsUrl)
+
+        aliceSession.start()
+        bobSession.start()
+
+        try {
+            withTimeout(5000) {
+                aliceSession.connectionState.first { it == AmpConnectionState.CONNECTED }
+                bobSession.connectionState.first { it == AmpConnectionState.CONNECTED }
+            }
+
+            val bobContact = ContactUiModel(
+                contactId = "bob",
+                displayName = "Bob",
+                handle = "did:aidos:bob",
+                mailboxId = bobIdentity.mailboxToken,
+                principalId = "did:aidos:bob",
+                x25519PublicKeyHex = bobIdentity.x25519PublicKeyHex
+            )
+
+            val aliceContact = ContactUiModel(
+                contactId = "alice",
+                displayName = "Alice",
+                handle = "did:aidos:alice",
+                mailboxId = aliceIdentity.mailboxToken,
+                principalId = "did:aidos:alice",
+                x25519PublicKeyHex = aliceIdentity.x25519PublicKeyHex
+            )
+
+            val alicePresenter = ConversationPresenter(
+                scope = testScope,
+                currentUserId = aliceIdentity.principalId,
+                currentDeviceKeyId = aliceIdentity.deviceId,
+                initialContact = bobContact,
+                session = aliceSession
+            )
+
+            val bobPresenter = ConversationPresenter(
+                scope = testScope,
+                currentUserId = bobIdentity.principalId,
+                currentDeviceKeyId = bobIdentity.deviceId,
+                initialContact = aliceContact,
+                session = bobSession
+            )
+
+            // Alice sends message to Bob
+            alicePresenter.onInputDraftChanged("Hi Bob, this is Alice via UI presenter!")
+            alicePresenter.sendMessage()
+
+            // Wait for Bob's presenter state to receive message
+            withTimeout(5000) {
+                while (bobPresenter.state.value.items.none { it is TimelineItemUiModel.Message && it.naturalText == "Hi Bob, this is Alice via UI presenter!" }) {
+                    delay(50)
+                }
+            }
+
+            val bobReceivedMsg = bobPresenter.state.value.items.first {
+                it is TimelineItemUiModel.Message && it.naturalText == "Hi Bob, this is Alice via UI presenter!"
+            } as TimelineItemUiModel.Message
+            assertEquals(aliceIdentity.mailboxToken, bobReceivedMsg.sender.principalId)
+            assertTrue(bobReceivedMsg.isDelivered)
+
+            // Bob replies to Alice
+            bobPresenter.onInputDraftChanged("Hello Alice, message verified!")
+            bobPresenter.sendMessage()
+
+            // Wait for Alice's presenter state to receive Bob's reply
+            withTimeout(5000) {
+                while (alicePresenter.state.value.items.none { it is TimelineItemUiModel.Message && it.naturalText == "Hello Alice, message verified!" }) {
+                    delay(50)
+                }
+            }
+
+            val aliceReceivedMsg = alicePresenter.state.value.items.first {
+                it is TimelineItemUiModel.Message && it.naturalText == "Hello Alice, message verified!"
+            } as TimelineItemUiModel.Message
+            assertEquals(bobIdentity.mailboxToken, aliceReceivedMsg.sender.principalId)
+        } finally {
+            testScope.cancel()
+            aliceSession.close()
+            bobSession.close()
+            server.stop(500, 1000)
+            q.close()
+            kr.close()
+            tempDir.toFile().deleteRecursively()
+        }
     }
 }

@@ -130,7 +130,8 @@ class AmpSession(
             payloadPlaintext = plaintext,
             humanOnly = (policy == PrivacyLevel.HUMAN_ONLY),
             status = MessageStatus.PENDING_OUTBOX,
-            createdAtMillis = now
+            createdAtMillis = now,
+            recipientPrincipalId = recipientPrincipalId
         )
 
         // Stage in local DB
@@ -169,7 +170,7 @@ class AmpSession(
             val policy = if (item.humanOnly) PrivacyLevel.HUMAN_ONLY else PrivacyLevel.AGENT_ACCESSIBLE
             val relayMsgId = relayClient.sendDirectMessage(
                 recipientMailboxToken = item.recipientMailboxToken,
-                recipientPrincipalId = item.conversationId,
+                recipientPrincipalId = item.recipientPrincipalId,
                 recipientX25519PublicKeyHex = item.recipientX25519PublicKeyHex,
                 plaintext = item.payloadPlaintext,
                 policy = policy,
