@@ -68,19 +68,27 @@ flowchart LR
 ---
 
 ## Milestone 4: Compose Multiplatform UI (`amp-ui`)
-**Goal:** Shared native UI for Android, Desktop (Windows/macOS/Linux), and Web (Wasm).
+**Goal:** Shared native UI for Android, Desktop (Windows/macOS/Linux), and Web (Wasm). Dual usage: standalone chat app & Aidos Desktop Generative UI atomic/molecular components.
 
-* [ ] **Compose Multiplatform UI Components:**
-  - Conversation thread view with distinct visual provenance badges:
-    - `👤 Human Direct`
-    - `🤖 Delegated Runner`
-    - `🔒 Human-Only E2EE`
-  - Dual-View toggle: Natural Language stream vs. Condensed Cue-Words ticker.
-  - Progressive disclosure inspector and 1-tap approval modal.
-  - Audio dictation playback with waveform rendering.
+* [x] **Compose Multiplatform UI Components (`amp-ui`):**
+  - **Atomic / Molecular Generative UI System:**
+    - Visual provenance badges: `👤 Human Direct`, `🤖 Delegated Runner`, `🔒 Human-Only E2EE`, `⚙️ System Service`
+    - Semantic `CueChip` and `CueTickerRow` for ultra-dense glanceable summaries
+    - `PresenceIndicator` with soft animated pulsing wave
+    - `WaveformVisualizer` for audio dictation playback
+    - `PrivacySealBadge` indicating hardware-enclave human-only sealed payloads
+    - 1-tap `ApprovalCard` for escrowed progressive disclosure queries
+    - `CalendarCopilotCard` for inline scheduling co-pilot actions
+    - `IdentityCard` for live HMAC blinded mailbox inspection
+  - **Screen Organisms:**
+    - `LoginScreen`: Blinded mailbox derivation, principal DID, device key, relay endpoint configuration
+    - `ContactsScreen`: Presence pulse, Aidos active badge, search filter, action required escrow banner
+    - `ConversationScreen`: 4-party mesh header, Dual-View toggle (Natural Language Stream vs. Condensed Cue-Words Ticker), dynamic timeline, composer with Human-Only E2EE lock toggle
+  - **Generative UI Component Dispatcher:**
+    - `GenerativeUiRegistry`: Dynamically maps `UniversalEnvelope` into atomic/molecular Compose blocks for Aidos Desktop
 * [ ] **Web Fallback (Kotlin/Wasm):**
   - Browser-based ephemeral client for zero-install invite links.
-* [ ] **Verification:** Compose Desktop & Android UI tests for chat interactions and approval modals.
+* [x] **Verification:** Compose Desktop & JVM unit test suite verifying Presenters (`LoginPresenter`, `ContactsPresenter`, `ConversationPresenter`) and Generative UI registry dispatching.
 
 ---
 

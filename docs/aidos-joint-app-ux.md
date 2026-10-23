@@ -12,6 +12,11 @@ Traditional messaging apps (WhatsApp, Signal, Slack) model conversations strictl
 
 In **Agentic Messenger with Aidos**, a chat thread is a collaborative stream where **you, your contact, and your respective Aidos assistants** interact naturally in the same unified timeline.
 
+### Component Domain Ownership
+* **`agentic-messenger` (`amp-ui`) strictly owns this domain of components**: All multiplatform UI components for the Login flow, Contacts directory, 4-party Conversation Mesh, Dual-View toggle, Progressive Disclosure approval cards, and the `GenerativeUiRegistry` belong to and are developed in `agentic-messenger`.
+* **Aidos Desktop & Android Consumption**: Aidos embeds these atomic/molecular components directly on its infinite canvas and chat panes without duplication.
+* **Boundary with Dictator**: Audio voice capture and Red Pill recording UI planning are owned by `dictator`; `agentic-messenger` only provides the audio playback waveform visualizer and composer trigger slot.
+
 ---
 
 ## 2. The 4-Party Conversation Mesh

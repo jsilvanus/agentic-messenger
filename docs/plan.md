@@ -21,7 +21,7 @@ Unlike conventional chat applications (Signal, WhatsApp, Slack, Matrix) where AI
 
 ---
 
-## 2. Technical Stack Selection
+## 2. Technical Stack Selection & Domain Ownership
 
 Following the architectural assessment of the Aidos and Dictator ecosystem:
 
@@ -29,7 +29,16 @@ Following the architectural assessment of the Aidos and Dictator ecosystem:
   - Direct dependency inside Aidos and Dictator (`implementation(project(":amp-core"))`).
   - Shared business logic, serialization (`kotlinx.serialization`), and coroutine reactive pipelines (`kotlinx.coroutines`, `Flow`).
   - Local Working Memory powered by **SQLDelight** (compiled type-safe SQLite running on Android, Desktop, and iOS).
-* **User Interface:** **Compose Multiplatform (Jetpack Compose)**
+* **User Interface:** **Compose Multiplatform (Jetpack Compose) — Domain Ownership: `agentic-messenger` (`amp-ui`)**
+  - **Authoritative Domain Owner:** `agentic-messenger` strictly owns this domain of multiplatform UI components (`amp-ui`), covering:
+    - Login & Identity Setup: `LoginScreen`, `IdentityCard`, live HMAC blinded mailbox generation.
+    - Contacts Directory & Mesh Presence: `ContactsScreen`, `ContactRow`, `PresenceIndicator` (with animated pulse waves).
+    - 4-Party Conversation Mesh: `ConversationScreen`, `MessageBubble`, `ProvenanceBadge` (`👤 Human Direct`, `🤖 Delegated Runner`, `🔒 Human-Only E2EE`, `⚙️ System Service`).
+    - Dual-View Toggle: `DualViewToggle` and `CueTickerRow` (Natural Language Stream vs Condensed Cue-Words Ticker).
+    - Progressive Disclosure & Smart Actions: 1-tap `ApprovalCard` for topic escalations, inline `CalendarCopilotCard`.
+    - Generative UI Registry: `GenerativeUiRegistry` dispatching Universal Agentic Envelopes (UAE) to interactive Compose cards.
+  - **Consumption by Aidos Desktop & Mobile:** Aidos Desktop directly consumes these components as atomic and molecular Generative UI blocks for spatial canvas nodes, chat panes, and execution timelines without duplicating UI code.
+  - **Boundary with Dictator:** Voice capture and Red Pill UI planning are owned by `dictator`; `agentic-messenger` only provides the audio dictation playback waveform component (`WaveformVisualizer`) and composer trigger slot.
   - Native Android APK (hardware-accelerated, native feel).
   - Native Desktop app (Windows, macOS, Linux).
   - Web fallback via Compose for Web / Kotlin/Wasm.
@@ -57,7 +66,7 @@ agentic-messenger/
 ├── amp-client-sdk/               # KMP: Connection manager, SQLDelight Working Memory, outbox queue
 ├── amp-server/                   # High-Efficiency Blind Relay (Rust / Tokio or Ktor Netty)
 ├── amp-mcp/                      # JVM/KMP: Model Context Protocol adapter for AI agents
-├── amp-ui/                       # Compose Multiplatform UI: Android, Desktop & Web
+├── amp-ui/                       # Compose Multiplatform UI: Android, Desktop & Web (Owns UI domain)
 └── docs/                         # Specifications & Architectural Blueprints
     ├── plan.md                   # This master blueprint
     ├── roadmap.md                # 6-phase engineering milestones
