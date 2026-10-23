@@ -67,6 +67,7 @@ agentic-messenger/
 ├── amp-server/                   # High-Efficiency Blind Relay (Rust / Tokio or Ktor Netty)
 ├── amp-mcp/                      # JVM/KMP: Model Context Protocol adapter for AI agents
 ├── amp-ui/                       # Compose Multiplatform UI: Android, Desktop & Web (Owns UI domain)
+├── amp-desktop/                  # Compose Multiplatform Desktop App & Dual-Window Launcher
 └── docs/                         # Specifications & Architectural Blueprints
     ├── plan.md                   # This master blueprint
     ├── roadmap.md                # 6-phase engineering milestones

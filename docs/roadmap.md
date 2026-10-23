@@ -70,7 +70,11 @@ flowchart LR
 ## Milestone 4: Compose Multiplatform UI (`amp-ui`)
 **Goal:** Shared native UI for Android, Desktop (Windows/macOS/Linux), and Web (Wasm). Dual usage: standalone chat app & Aidos Desktop Generative UI atomic/molecular components.
 
-* [x] **Compose Multiplatform UI Components (`amp-ui`):**
+* [x] **Compose Multiplatform UI Components (`amp-ui` & `:amp-desktop`):**
+  - **Desktop Application & Dual-Window Launcher (`:amp-desktop`):**
+    - Multi-window launcher spawning Window A (Alice) and Window B (Bob) side-by-side for end-to-end testing in a single process.
+    - Window layout: Header (profile, connection status, mailbox ID), Chat stream (sent/received bubbles, timestamps), and Bottom bar (text field + Enter key shortcut send).
+    - Transport bridge abstraction for client SDK wiring with local loopback router.
   - **Atomic / Molecular Generative UI System:**
     - Visual provenance badges: `👤 Human Direct`, `🤖 Delegated Runner`, `🔒 Human-Only E2EE`, `⚙️ System Service`
     - Semantic `CueChip` and `CueTickerRow` for ultra-dense glanceable summaries
