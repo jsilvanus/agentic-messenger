@@ -2,19 +2,15 @@ package com.agenticmessenger.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
@@ -28,34 +24,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agenticmessenger.ui.atomic.PresenceIndicator
-import com.agenticmessenger.ui.generative.GenerativeUiRegistry
-import com.agenticmessenger.ui.model.ConversationViewMode
 import com.agenticmessenger.ui.model.PresenceState
-import com.agenticmessenger.ui.model.TimelineItemUiModel
-import com.agenticmessenger.ui.molecular.ConversationInputBar
-import com.agenticmessenger.ui.molecular.CueTickerRow
+import com.agenticmessenger.ui.molecular.DocumentChatFlow
 import com.agenticmessenger.ui.molecular.DualViewToggle
 import com.agenticmessenger.ui.presenter.ConversationPresenter
 
 /**
  * Screen: ConversationScreen (Compose Multiplatform)
  *
- * Implements the 4-party collaborative conversation mesh:
+ * Implements the continuous Living Document chat flow adopting Dictator's TCR Document Model:
  * - Contact + Aidos presence header
- * - Dual-View toggle (Natural Language Stream vs Condensed Cue-Words Ticker)
- * - Timeline with:
- *   - Human Direct turns
- *   - Delegated Runner / Aidos Assistant turns
- *   - Human-Only hardware-enclave sealed turns
- *   - 1-tap Progressive Disclosure Approval cards
- *   - Inline Calendar Co-Pilot cards
- *   - Voice dictation waveform playback
- * - Composer with Human-Only privacy lock switch
+ * - Continuous Document Flow with history items
+ * - Active Document Input Section at the tail (differentiated with horizontal divider and soft tint)
+ * - Draggable Red Pill (Ember cursor from Dictator) anchored at caret, draggable to messages for context
+ * - Single click: quick orchestrator prompt
+ * - Double click / long-press: Dictator-style Transcript Split Drawer
  */
 @Composable
 fun ConversationScreen(
@@ -63,7 +50,6 @@ fun ConversationScreen(
     currentUserId: String,
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
-    onVoiceDictationTrigger: () -> Unit = {},
     onAskAiTrigger: (() -> Unit)? = { presenter.askAi() }
 ) {
     val state by presenter.state.collectAsState()
@@ -139,17 +125,6 @@ fun ConversationScreen(
                     thickness = 1.dp
                 )
             }
-        },
-        bottomBar = {
-            ConversationInputBar(
-                text = state.inputDraft,
-                onTextChanged = { presenter.onInputDraftChanged(it) },
-                isHumanOnly = state.isHumanOnlyE2EEMode,
-                onToggleHumanOnly = { presenter.toggleHumanOnlyMode() },
-                onVoiceDictationTrigger = onVoiceDictationTrigger,
-                onAskAiTrigger = onAskAiTrigger,
-                onSend = { presenter.sendMessage() }
-            )
         }
     ) { innerPadding ->
         Box(
@@ -158,71 +133,24 @@ fun ConversationScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            if (state.items.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Encrypted 4-Party Conversation Mesh Initialized.\nSay hello or ask Aidos.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 13.sp,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    when (state.viewMode) {
-                        ConversationViewMode.NATURAL_STREAM -> {
-                            items(state.items, key = { it.id }) { item ->
-                                GenerativeUiRegistry.RenderItem(
-                                    item = item,
-                                    currentUserId = currentUserId,
-                                    onApproveDisclosure = { presenter.approveDisclosure(it) },
-                                    onDeclineDisclosure = { presenter.declineDisclosure(it) },
-                                    onConfirmCalendar = { presenter.confirmCalendarAction(item.id) }
-                                )
-                            }
-                        }
-                        ConversationViewMode.CUE_WORDS_TICKER -> {
-                            items(state.items, key = { it.id }) { item ->
-                                when (item) {
-                                    is TimelineItemUiModel.Message -> {
-                                        CueTickerRow(
-                                            timestamp = item.timestamp,
-                                            senderName = item.sender.principalId.substringAfterLast(":"),
-                                            provenanceType = item.provenanceType,
-                                            cueWords = item.cueWords
-                                        )
-                                    }
-                                    is TimelineItemUiModel.ProgressiveDisclosureRequest -> {
-                                        CueTickerRow(
-                                            timestamp = item.timestamp,
-                                            senderName = item.requester.principalId.substringAfterLast(":"),
-                                            provenanceType = com.agenticmessenger.ui.model.MeshProvenanceType.AGENT_RUNNER,
-                                            cueWords = listOf("Disclosure Request", item.topicKey, item.status.name)
-                                        )
-                                    }
-                                    is TimelineItemUiModel.CalendarProposal -> {
-                                        CueTickerRow(
-                                            timestamp = item.timestamp,
-                                            senderName = "Aidos",
-                                            provenanceType = com.agenticmessenger.ui.model.MeshProvenanceType.AGENT_RUNNER,
-                                            cueWords = listOf("Calendar", item.proposedTime, if (item.isActionTaken) "Confirmed" else "Pending")
-                                        )
-                                    }
-                                }
-                            }
-                        }
+            DocumentChatFlow(
+                items = state.items,
+                currentUserId = currentUserId,
+                inputDraft = state.inputDraft,
+                onInputDraftChanged = { presenter.onInputDraftChanged(it) },
+                onSend = { presenter.sendMessage() },
+                viewMode = state.viewMode,
+                listState = listState,
+                presenter = presenter,
+                onOrchestratorCommand = { cmd, targetId ->
+                    val fullPrompt = if (targetId != null) {
+                        "Context target message ID: $targetId.\nInstruction: $cmd"
+                    } else {
+                        cmd
                     }
+                    presenter.askAi(fullPrompt)
                 }
-            }
+            )
         }
     }
 }

@@ -31,6 +31,11 @@ data class ContactDescriptor(
  * executing systemic agentic workflows powered by Aidos's `:agent:amp` core.
  *
  * Supports both conversation-specific reasoning and cross-chat user-level orchestration.
+ *
+ * Dual Mode Messaging:
+ * - Default: Dispatches as autonomous Agent Delegate (badged to recipient as 🤖 Delegated Runner).
+ * - Option: Dispatches as Ghostwriter / "Send as Me" (badged to recipient as 👤 Human Direct).
+ * - Constraint: Never creates sealed messages (PrivacyLevel is always AGENT_ACCESSIBLE).
  */
 class AmpAgentService(
     val systemPrompt: String = DEFAULT_AMP_SYSTEM_PROMPT,
@@ -38,7 +43,7 @@ class AmpAgentService(
     val customAdapter: ModelAdapter? = null,
     val contactLookup: ((nameOrQuery: String) -> ContactDescriptor?)? = null,
     val messageFetcher: (suspend (mailboxIdOrConvId: String, limit: Int) -> List<AmpConversationTurn>)? = null,
-    val messageSender: (suspend (recipient: ContactDescriptor, text: String) -> Boolean)? = null,
+    val messageSender: (suspend (recipient: ContactDescriptor, text: String, ghostwrite: Boolean) -> Boolean)? = null,
 ) {
 
     private val tools: List<AmpToolDefinition> = buildDefaultTools() + customTools
@@ -102,13 +107,13 @@ class AmpAgentService(
 
         AmpToolDefinition(
             name = "get_contact_status",
-            description = "Queries progressive disclosure status, ETA, and breakdown reasons for contacts.",
+            description = "Retrieves presence, verified ETA, and disclosed reasons for delay for a contact.",
             inputSchema = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
                     putJsonObject("contactName") {
                         put("type", "string")
-                        put("description", "The contact's display name or handle (e.g. 'Jack' or 'did:aidos:jack')")
+                        put("description", "Name or handle of contact (e.g. 'Alice', 'Bob')")
                     }
                 }
                 put("required", buildJsonArray {
@@ -116,7 +121,7 @@ class AmpAgentService(
                 })
             },
             handler = { args ->
-                val contact = args["contactName"]?.jsonPrimitive?.content ?: "Jack"
+                val contact = args["contactName"]?.jsonPrimitive?.content ?: "Alice"
                 AmpToolExecutionResult(
                     "Progressive Disclosure Record for $contact: Status=LATE, Cause=CAR_BREAKDOWN, Approved ETA=~35 minutes (Highway 101 traffic)."
                 )
@@ -166,10 +171,10 @@ class AmpAgentService(
             }
         ),
 
-        // User-Level Orchestrator Tool: Send message to a contact
+        // User-Level Orchestrator Tool: Send message to a contact (Dual Mode: Agent vs Ghostwriter)
         AmpToolDefinition(
             name = "send_chat_message",
-            description = "Sends an outbound direct message to a specified contact or chat.",
+            description = "Sends an outbound direct message to a specified contact. Default is sending as your autonomous AI agent delegate (badged as 'Delegated Runner'). Set ghostwrite=true if the user explicitly requested to send the message as themselves / directly from them (badged as 'Human Direct'). Never send as sealed message.",
             inputSchema = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -181,6 +186,10 @@ class AmpAgentService(
                         put("type", "string")
                         put("description", "The exact message text to dispatch")
                     }
+                    putJsonObject("ghostwrite") {
+                        put("type", "boolean")
+                        put("description", "Optional: set to true to send as the human user directly ('send as me' / ghostwritten). Default is false (send as agent delegate).")
+                    }
                 }
                 put("required", buildJsonArray {
                     add(kotlinx.serialization.json.JsonPrimitive("recipientName"))
@@ -190,20 +199,22 @@ class AmpAgentService(
             handler = { args ->
                 val recipientName = args["recipientName"]?.jsonPrimitive?.content ?: "Bob"
                 val text = args["messageText"]?.jsonPrimitive?.content ?: ""
+                val ghostwrite = args["ghostwrite"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false
 
                 if (text.isBlank()) {
                     AmpToolExecutionResult("Cannot send empty message.", isError = true)
                 } else {
                     val resolved = contactLookup?.invoke(recipientName)
+                    val modeLabel = if (ghostwrite) "Ghostwriter / Human Direct" else "Agent Delegate"
                     if (resolved != null && messageSender != null) {
-                        val ok = messageSender.invoke(resolved, text)
+                        val ok = messageSender.invoke(resolved, text, ghostwrite)
                         if (ok) {
-                            AmpToolExecutionResult("Successfully dispatched message to ${resolved.displayName} (${resolved.principalId}): \"$text\"")
+                            AmpToolExecutionResult("Successfully dispatched message ($modeLabel) to ${resolved.displayName} (${resolved.principalId}): \"$text\"")
                         } else {
                             AmpToolExecutionResult("Failed to dispatch message to ${resolved.displayName}.", isError = true)
                         }
                     } else {
-                        AmpToolExecutionResult("Simulated dispatch: Message sent to $recipientName: \"$text\"")
+                        AmpToolExecutionResult("Simulated dispatch ($modeLabel): Message sent to $recipientName: \"$text\"")
                     }
                 }
             }
@@ -219,6 +230,7 @@ Rules:
 3. If the user asks about contact status, reasons for delay, or ETA, ALWAYS call the 'get_contact_status' tool.
 4. If the user asks what was said in a chat or asks for messages from a contact, ALWAYS call 'query_chat_messages'.
 5. If the user asks to send a message to someone or tell someone something, ALWAYS call 'send_chat_message'.
-6. When answering after tool calls, summarize the result clearly."""
+6. When sending a message via 'send_chat_message', DEFAULT to ghostwrite=false (sending as Agent Delegate). Only set ghostwrite=true if the user specifically instructs you to send it as themselves, from me, directly, or without disclosing AI involvement. Never create sealed/human-only messages.
+7. When answering after tool calls, summarize the result clearly."""
     }
 }

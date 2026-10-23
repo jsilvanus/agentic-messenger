@@ -218,10 +218,47 @@ class ConversationPresenter(
     val session: AmpSession? = null,
     val openAiClient: OpenAiClient = OpenAiClient(),
     var openAiConfig: OpenAiConfig = OpenAiConfig(),
+    var contacts: List<ContactUiModel> = emptyList(),
     customAgentService: AmpAgentService? = null
 ) {
     val agentService: AmpAgentService = customAgentService ?: AmpAgentService(
-        customAdapter = OpenAiClientModelAdapter(openAiClient) { openAiConfig }
+        customAdapter = OpenAiClientModelAdapter(openAiClient) { openAiConfig },
+        contactLookup = { query ->
+            val all = (listOfNotNull(_state.value.contact) + contacts).distinctBy { it.mailboxId }
+            all.firstOrNull { it.displayName.contains(query, true) || it.handle.contains(query, true) }?.let {
+                com.agenticmessenger.agent.ContactDescriptor(it.contactId, it.displayName, it.mailboxId, it.principalId, it.x25519PublicKeyHex)
+            }
+        },
+        messageFetcher = { mailboxId, limit ->
+            session?.messageRepo?.getMessages(mailboxId, limit)?.map { stored ->
+                AmpConversationTurn(
+                    role = if (stored.senderId == currentUserId) "user" else "assistant",
+                    text = stored.plaintext,
+                    senderId = stored.senderId
+                )
+            } ?: emptyList()
+        },
+        messageSender = { recipient, text, ghostwrite ->
+            if (session != null) {
+                val endpointType = if (ghostwrite) EndpointType.HUMAN_DIRECT else EndpointType.AGENT_DELEGATE
+                val annotationsJson = if (ghostwrite) {
+                    """[{"type":"ghostwritten_turn","agent_confidence":0.99}]"""
+                } else {
+                    """[{"type":"orchestrator_turn","agent_confidence":0.99}]"""
+                }
+                session.sendMessage(
+                    recipientMailboxToken = recipient.mailboxId,
+                    recipientPrincipalId = recipient.principalId,
+                    recipientX25519PublicKeyHex = recipient.x25519PublicKeyHex.ifEmpty { "e2ee_mock_key" },
+                    plaintext = text,
+                    policy = PrivacyLevel.AGENT_ACCESSIBLE,
+                    conversationId = recipient.mailboxId,
+                    recipientEndpointType = endpointType,
+                    annotationsJson = annotationsJson
+                )
+                true
+            } else false
+        }
     )
     private val _state = MutableStateFlow(
         ConversationUiState(
@@ -257,17 +294,30 @@ class ConversationPresenter(
                 val mappedMessages = storedMessages.map { stored ->
                     val isSender = stored.senderId == currentUserId
                     val isHumanOnly = _state.value.isHumanOnlyE2EEMode
+                    val annotations = stored.annotationsJson ?: ""
+                    val isGhostwritten = annotations.contains("ghostwritten_turn")
+                    val isAgentGenerated = annotations.contains("orchestrator_turn") ||
+                                           annotations.contains("agent_delegate") ||
+                                           annotations.contains("assistant_response")
+
+                    val (endpointType, provenanceType) = when {
+                        isGhostwritten -> EndpointType.HUMAN_DIRECT to MeshProvenanceType.HUMAN_DIRECT
+                        isAgentGenerated -> EndpointType.AGENT_DELEGATE to MeshProvenanceType.AGENT_RUNNER
+                        isHumanOnly -> EndpointType.HUMAN_DIRECT to MeshProvenanceType.HUMAN_ONLY_E2EE
+                        else -> EndpointType.HUMAN_DIRECT to MeshProvenanceType.HUMAN_DIRECT
+                    }
+
                     TimelineItemUiModel.Message(
                         id = stored.id,
                         timestamp = stored.timestampMillis,
                         sender = EndpointIdentifier(
                             principalId = stored.senderId,
-                            endpointType = EndpointType.HUMAN_DIRECT,
+                            endpointType = endpointType,
                             deviceKeyId = if (isSender) currentDeviceKeyId else "peer"
                         ),
-                        provenanceType = if (isHumanOnly) MeshProvenanceType.HUMAN_ONLY_E2EE else MeshProvenanceType.HUMAN_DIRECT,
+                        provenanceType = provenanceType,
                         provenanceRecord = ProvenanceRecord(
-                            assertionLevel = AssertionLevel.ORIGINAL_HUMAN,
+                            assertionLevel = if (isAgentGenerated && !isGhostwritten) AssertionLevel.AGENT_SYNTHESIZED else AssertionLevel.ORIGINAL_HUMAN,
                             signerKeyId = if (isSender) currentDeviceKeyId else "peer_signer",
                             signatureHex = stored.relayEnvelopeId ?: "e2ee_verified"
                         ),
@@ -420,7 +470,7 @@ class ConversationPresenter(
                     plaintext = replyText,
                     policy = PrivacyLevel.AGENT_ACCESSIBLE,
                     conversationId = contact.mailboxId,
-                    recipientEndpointType = EndpointType.HUMAN_DIRECT,
+                    recipientEndpointType = EndpointType.AGENT_DELEGATE,
                     annotationsJson = """[{"type":"assistant_response","confidence":0.98}]"""
                 )
             } else {

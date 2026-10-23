@@ -49,3 +49,14 @@ docker compose up -d
 - **VersityGW S3 API**: `http://localhost:7070`
 - **VersityGW Admin/WebUI**: `http://localhost:7071`
 
+
+---
+
+## 🏛️ UI Component Ownership & Design Vocabulary (D46)
+
+In the cross-repository ecosystem, specific repositories maintain authoritative ownership over UI domains:
+- **Dictator (`dictator`)**: Authoritative owner of **Document Editing Interfaces**, **Continuous Living Document Flows**, the **Red Pill (Ember Caret Actor)** speech-to-text cursor, and **TCR Staging Overlays** (`PillConstellationOverlay`, `FloatingActorPill`, `DocumentInputSection`, `TranscriptSplitDrawer`). In this model, text flows directly from the cursor and enters the document at the active caret.
+- **Agentic Messenger (`agentic-messenger`)**: Authoritative owner of **4-Party Conversation Mesh Protocols**, **Universal Envelopes (UAE)**, **Blinded Relay Networking**, and **Cryptographic Provenance Badges** (Human Direct vs Delegated Runner vs Sealed E2EE).
+- **Aidos (`aidos`)**: Authoritative owner of the **Core Agent Loop**, **Model Adapters**, **Tool Contracts**, and **Taint-Safe Execution**.
+
+AMP adopts Dictator's TCR Document Model (`DocumentChatFlow`, `DocumentInputSection`, and draggable Red Pill cursor) to ensure cross-ecosystem consistency.
