@@ -620,4 +620,27 @@ class AmpUiTest {
         assertEquals("spec.pdf", docMsg.attachments.first().fileName)
         assertEquals(AttachmentType.DOCUMENT, docMsg.attachments.first().type)
     }
+
+    @Test
+    fun testViewedReceiptAndOptOut() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(testDispatcher)
+
+        val presenter = ConversationPresenter(
+            scope = scope,
+            currentUserId = "did:aidos:alice",
+            currentDeviceKeyId = "key_alice"
+        )
+
+        // Default: sendViewedReceipts is true
+        assertTrue(presenter.state.value.sendViewedReceipts)
+
+        // User opts out of sending viewed receipts
+        presenter.toggleSendViewedReceipts()
+        assertFalse(presenter.state.value.sendViewedReceipts, "User opted out of sending viewed receipts")
+
+        // User re-enables
+        presenter.toggleSendViewedReceipts()
+        assertTrue(presenter.state.value.sendViewedReceipts)
+    }
 }

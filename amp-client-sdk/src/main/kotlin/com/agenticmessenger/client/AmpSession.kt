@@ -51,9 +51,11 @@ class AmpSession(
     private var inboundListenerJob: Job? = null
     private var receiptListenerJob: Job? = null
 
+    var isSendViewedReceiptsEnabled: Boolean = true
+
     /**
      * Starts the session: connects to the blind relay, starts the inbound listener,
-     * sets up the outbox drain worker, and monitors disclosure receipts.
+     * sets up the outbox drain worker, and monitors delivery, viewed, and disclosure receipts.
      */
     fun start() {
         relayClient.connect()
@@ -75,6 +77,19 @@ class AmpSession(
                 )
                 messageRepo.saveMessage(stored)
                 logger.debug("Received and persisted message '{}' for conversation '{}'", incoming.messageId, incoming.conversationId)
+
+                // Dispatch DeliveryReceipt to sender's mailbox
+                val senderMailbox = incoming.sourceMailbox ?: incoming.conversationId
+                try {
+                    val delReceipt = RelayFrame.DeliveryReceipt(
+                        messageId = incoming.messageId,
+                        sourceMailbox = identity.mailboxToken,
+                        destinationMailbox = senderMailbox
+                    )
+                    relayClient.sendFrame(delReceipt)
+                } catch (e: Exception) {
+                    logger.debug("Failed sending delivery receipt: {}", e.message)
+                }
             }
         }
 
@@ -87,13 +102,43 @@ class AmpSession(
             }
         }
 
-        // 3. Raw frames listener for DISCLOSURE_RECEIPT
+        // 3. Raw frames listener for DISCLOSURE_RECEIPT, DELIVERY_RECEIPT, VIEWED_RECEIPT
         receiptListenerJob = scope.launch {
             relayClient.rawFrames.collect { frame ->
-                if (frame is RelayFrame.DisclosureReceipt) {
-                    handleDisclosureReceipt(frame)
+                when (frame) {
+                    is RelayFrame.DisclosureReceipt -> handleDisclosureReceipt(frame)
+                    is RelayFrame.DeliveryReceipt -> {
+                        messageRepo.updateStatus(frame.messageId, MessageStatus.DELIVERED)
+                        logger.debug("Marked message '{}' status DELIVERED via receipt", frame.messageId)
+                    }
+                    is RelayFrame.ViewedReceipt -> {
+                        messageRepo.updateStatus(frame.messageId, MessageStatus.VIEWED)
+                        logger.debug("Marked message '{}' status VIEWED via receipt", frame.messageId)
+                    }
+                    else -> {}
                 }
             }
+        }
+    }
+
+    /**
+     * Marks an inbound message as viewed, and dispatches a ViewedReceipt to the sender
+     * unless the user has opted out via [isSendViewedReceiptsEnabled].
+     */
+    suspend fun markMessageViewed(messageId: String, senderMailboxToken: String? = null) {
+        if (!isSendViewedReceiptsEnabled) return
+        val existing = messageRepo.getMessageById(messageId) ?: return
+        val targetMailbox = senderMailboxToken ?: existing.conversationId
+        try {
+            val viewedReceipt = RelayFrame.ViewedReceipt(
+                messageId = messageId,
+                sourceMailbox = identity.mailboxToken,
+                destinationMailbox = targetMailbox
+            )
+            relayClient.sendFrame(viewedReceipt)
+            logger.debug("Dispatched ViewedReceipt for message '{}' to '{}'", messageId, targetMailbox)
+        } catch (e: Exception) {
+            logger.debug("Failed sending viewed receipt: {}", e.message)
         }
     }
 

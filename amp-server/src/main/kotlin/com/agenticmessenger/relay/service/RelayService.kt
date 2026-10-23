@@ -130,6 +130,28 @@ class RelayService(
                 null
             }
 
+            is RelayFrame.DeliveryReceipt -> {
+                val frameText = json.encodeToString<RelayFrame>(frame)
+                val broker = activeBroker
+                if (broker != null) {
+                    broker.publish(frame.destinationMailbox, frameText)
+                } else if (router.isOnline(frame.destinationMailbox)) {
+                    router.dispatch(frame.destinationMailbox, frameText)
+                }
+                null
+            }
+
+            is RelayFrame.ViewedReceipt -> {
+                val frameText = json.encodeToString<RelayFrame>(frame)
+                val broker = activeBroker
+                if (broker != null) {
+                    broker.publish(frame.destinationMailbox, frameText)
+                } else if (router.isOnline(frame.destinationMailbox)) {
+                    router.dispatch(frame.destinationMailbox, frameText)
+                }
+                null
+            }
+
             is RelayFrame.Ping -> {
                 RelayFrame.Pong(nonce = frame.nonce)
             }

@@ -93,6 +93,7 @@ sealed class TimelineItemUiModel {
         val audioPlayback: AudioPlaybackUiState? = null,
         val isDelivered: Boolean = true,
         val isRead: Boolean = true,
+        val isViewed: Boolean = false,
         val attachments: List<AttachmentPayload> = emptyList(),
         val isShieldedVoice: Boolean = false,
         val shieldedSttTranscript: String? = null,
@@ -183,5 +184,6 @@ data class ConversationUiState(
     val isAidosCoPilotTyping: Boolean = false,
     val isSending: Boolean = false,
     val isShieldedSttOptOutGlobal: Boolean = false,
+    val sendViewedReceipts: Boolean = true,
     val errorMessage: String? = null
 )

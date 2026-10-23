@@ -99,6 +99,21 @@ fun MessageBubble(
                     fontSize = 11.sp
                 )
             }
+
+            if (isSelf) {
+                Spacer(modifier = Modifier.width(6.dp))
+                val (statusText, statusColor) = when {
+                    message.isViewed -> "✓✓ Viewed" to MaterialTheme.colorScheme.primary
+                    message.isDelivered -> "✓✓ Delivered" to MaterialTheme.colorScheme.onSurfaceVariant
+                    else -> "✓ Sent" to MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                }
+                Text(
+                    text = statusText,
+                    fontSize = 10.sp,
+                    color = statusColor,
+                    fontWeight = if (message.isViewed) FontWeight.Bold else FontWeight.Normal
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(2.dp))
@@ -298,8 +313,8 @@ fun MessageBubble(
                 if (message.privacyLevel == PrivacyLevel.HUMAN_ONLY) {
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    // Case A: Recipient view & not yet unshielded -> Allow recipient to unshield for their AI
-                    if (!isSelf && !message.isUnshieldedForAi) {
+                    // Case A: Allow either party (Sender or Recipient) to unshield for their local AI assistant
+                    if (!message.isUnshieldedForAi) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = Color(0xFFEFF6FF),
@@ -322,17 +337,15 @@ fun MessageBubble(
                                         color = Color(0xFF1D4ED8)
                                     )
                                     Text(
-                                        "Grants your local AI access. Transmits disclosure receipt to sender.",
+                                        "Grants your local AI access. Transmits disclosure receipt to peer.",
                                         fontSize = 9.sp,
                                         color = Color(0xFF3B82F6)
                                     )
                                 }
                             }
                         }
-                    }
-
-                    // Case B: Recipient unshielded for their AI
-                    if (!isSelf && message.isUnshieldedForAi) {
+                    } else {
+                        // Case B: This party has unshielded for their AI
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = Color(0xFFECFDF5),
@@ -346,7 +359,7 @@ fun MessageBubble(
                                 Text("🔓", fontSize = 11.sp)
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    "Unshielded for Local AI (Disclosure receipt sent to sender)",
+                                    "Unshielded for Local AI (Disclosure receipt sent to peer)",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = Color(0xFF047857)
@@ -355,8 +368,9 @@ fun MessageBubble(
                         }
                     }
 
-                    // Case C: Sender copy — recipient unshielded it
-                    if (isSelf && message.disclosureReceiptReceived) {
+                    // Case C: Peer has unshielded their copy (Disclosure receipt received from peer)
+                    if (message.disclosureReceiptReceived) {
+                        Spacer(modifier = Modifier.height(4.dp))
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = Color(0xFFFFFBEB),
@@ -370,7 +384,7 @@ fun MessageBubble(
                                 Text("📡", fontSize = 11.sp)
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    "Disclosed by recipient to local AI (Sender copy remains sealed)",
+                                    "Disclosed by peer to local AI (Your copy remains sealed)",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = Color(0xFFB45309)
@@ -381,6 +395,7 @@ fun MessageBubble(
 
                     // Case D: Standard sealed notice if not unshielded
                     if (!message.isUnshieldedForAi && !message.disclosureReceiptReceived) {
+                        Spacer(modifier = Modifier.height(4.dp))
                         PrivacySealBadge(
                             detailedText = "Hardware Enclave Sealed (Quarantined from AI models)"
                         )
