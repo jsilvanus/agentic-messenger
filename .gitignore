@@ -1,0 +1,20 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Local databases and blob data
+*.db
+*.db-shm
+*.db-wal
+data/
+blobs/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -39,7 +39,7 @@ flowchart LR
 ## Milestone 2: Ultra-Fast Blind Relay & KMP Client SDK (`amp-server` & `amp-client-sdk`)
 **Goal:** Microsecond blinded routing and resilient client connection manager.
 
-* [ ] **High-Efficiency Blind Relay Server (`amp-server`):**
+* [x] **High-Efficiency Blind Relay Server (`amp-server`):**
   - Implemented in **Rust (Tokio + Axum)** or **Ktor / Netty (GraalVM Native)** for maximum throughput and minimal memory (< 15 MB RAM idle).
   - Blinded mailbox router (`mailbox_id = HMAC(epoch, device_id)`).
   - Ephemeral store-and-forward queue with strict TTL and delivery ACKs (SQLite / PostgreSQL).

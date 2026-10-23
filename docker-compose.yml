@@ -1,0 +1,45 @@
+services:
+  # VersityGW: High-performance S3 gateway on local POSIX storage
+  versitygw:
+    image: ghcr.io/versity/versitygw:latest
+    container_name: amp-versitygw
+    restart: unless-stopped
+    ports:
+      - "7070:7070"   # S3 API endpoint
+      - "7071:7071"   # Admin / WebUI endpoint
+    environment:
+      - ROOT_ACCESS_KEY=ampaccesskey
+      - ROOT_SECRET_KEY=ampsecretkey123
+      - VGW_BACKEND=posix
+      - VGW_BACKEND_ARGS=/data/s3
+      - VGW_IAM_DIR=/data/iam
+      - VGW_VERSIONING_DIR=/data/versioning
+    volumes:
+      - ./data/versity-s3:/data/s3
+      - ./data/versity-iam:/data/iam
+      - ./data/versity-versioning:/data/versioning
+
+  # Agentic Messenger Blind Relay configured with S3-compatible blob storage
+  amp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: amp-relay-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - RELAY_PORT=8080
+      - RELAY_HOST=0.0.0.0
+      - RELAY_DB_PATH=/app/data/blind_relay.db
+      - STORAGE_BACKEND=s3
+      - S3_ENDPOINT=http://versitygw:7070
+      - S3_BUCKET=amp-blobs
+      - S3_REGION=us-east-1
+      - S3_ACCESS_KEY=ampaccesskey
+      - S3_SECRET_KEY=ampsecretkey123
+      - S3_FORCE_PATH_STYLE=true
+    volumes:
+      - ./data/relay-db:/app/data
+    depends_on:
+      - versitygw
