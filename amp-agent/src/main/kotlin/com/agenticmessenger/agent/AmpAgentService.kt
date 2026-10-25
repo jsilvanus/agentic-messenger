@@ -75,6 +75,21 @@ class AmpAgentService(
         )
     }
 
+    /**
+     * Same as [processTurn], but the loop and the model run in the desktop Aidos app (`/v1/agent`).
+     * Returns null when Aidos is not running or does not offer the agent API, so callers can fall back
+     * to the embedded runner.
+     */
+    suspend fun processTurnViaAidos(
+        incomingMessage: String,
+        model: String,
+        conversationHistory: List<AmpConversationTurn> = emptyList(),
+        endpoint: AidosEndpoint? = AidosEndpoint.discover(),
+    ): Result<AmpAgentTurnResult>? {
+        if (endpoint == null) return null
+        return AidosDesktopAgent(endpoint).executeTurn(model, systemPrompt, incomingMessage, conversationHistory, tools)
+    }
+
     private fun buildDefaultTools(): List<AmpToolDefinition> = listOf(
         AmpToolDefinition(
             name = "check_calendar",
