@@ -202,6 +202,16 @@ fun OpenAiConfigCard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                OutlinedTextField(
+                    value = config.aidosModel,
+                    onValueChange = { onConfigChanged(config.copy(aidosModel = it)) },
+                    label = { Text("Aidos model id (blank = first installed chat model)", fontSize = 11.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
