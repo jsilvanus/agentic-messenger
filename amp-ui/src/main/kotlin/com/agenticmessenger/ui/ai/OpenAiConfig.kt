@@ -10,8 +10,11 @@ data class OpenAiConfig(
     val host: String = "localhost",
     val port: Int = 11434, // Default Ollama port (8000 for Aidos / LocalAI)
     val model: String = "llama3",
-    /** The model id in Aidos (`/v1/models`) that agent turns use; a provider's models are `<provider>:<model>`. */
-    val aidosModel: String = "ollama:llama3",
+    /**
+     * The model id in Aidos (`/v1/models`) that agent turns use; a provider's models are `<provider>:<model>`.
+     * Blank (the default): the first chat model installed in Aidos, so a fresh install needs no provider.
+     */
+    val aidosModel: String = "",
     /**
      * User selection. Off (the default): turns run through the desktop Aidos app, which owns the
      * models and enforces where inference may go. On: this client talks to the endpoint above

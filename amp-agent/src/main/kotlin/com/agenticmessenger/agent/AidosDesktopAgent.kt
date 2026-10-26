@@ -18,10 +18,36 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
 
 /** Where the desktop Aidos app is listening and the token it accepts (`~/.aidos/engine.json`). */
 data class AidosEndpoint(val baseUrl: String, val token: String) {
+    /**
+     * Ids of the chat models installed in Aidos (`GET /v1/models`), in Aidos's order. Empty when none is
+     * installed; throws when Aidos does not answer, so callers can tell "nothing installed" from "not running".
+     */
+    suspend fun installedChatModels(): List<String> = withContext(Dispatchers.IO) {
+        val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/models"))
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/json")
+            .timeout(Duration.ofSeconds(10))
+            .GET()
+            .build()
+        val response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString())
+        check(response.statusCode() in 200..299) { "Aidos /v1/models: HTTP ${response.statusCode()}" }
+        Json.parseToJsonElement(response.body()).jsonObject.getValue("data").jsonArray
+            .map { it.jsonObject }
+            .filter { it["kind"]?.jsonPrimitive?.contentOrNull == "chat" && it["installed"]?.jsonPrimitive?.contentOrNull == "true" }
+            .map { it.getValue("id").jsonPrimitive.content }
+    }
+
     companion object {
         /** The default discovery file, or the one named by `AIDOS_ENGINE_DISCOVERY`. */
         fun defaultDiscoveryFile(): File =
