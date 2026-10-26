@@ -90,6 +90,31 @@ class AmpAgentService(
         return AidosDesktopAgent(endpoint).executeTurn(model, systemPrompt, incomingMessage, conversationHistory, tools)
     }
 
+    /**
+     * The entry point UIs should call. Aidos on this desktop is the default agent runtime
+     * ([useAidosDesktop]); a user who picks their own OpenAI-compatible endpoint sets it to false.
+     *
+     * If Aidos is selected but not running, the turn falls back to the configured endpoint (which is
+     * the user's own choice, local Ollama by default). If Aidos IS running and the turn fails there,
+     * that failure is returned as is: silently re-sending the conversation elsewhere would defeat
+     * the point of choosing the local runtime.
+     */
+    suspend fun processTurnAuto(
+        incomingMessage: String,
+        conversationHistory: List<AmpConversationTurn> = emptyList(),
+        useAidosDesktop: Boolean = true,
+        aidosModel: String = "",
+        baseUrl: String,
+        model: String,
+        apiKey: String = "",
+        endpoint: AidosEndpoint? = if (useAidosDesktop) AidosEndpoint.discover() else null,
+    ): Result<AmpAgentTurnResult> {
+        if (endpoint == null) return processTurn(incomingMessage, conversationHistory, baseUrl, model, apiKey)
+        val chosen = aidosModel.ifBlank { endpoint.listModels().firstOrNull() }
+            ?: return Result.failure(IllegalStateException("Aidos is running but has no installed model; install one in the Aidos app"))
+        return processTurnViaAidos(incomingMessage, chosen, conversationHistory, endpoint)!!
+    }
+
     private fun buildDefaultTools(): List<AmpToolDefinition> = listOf(
         AmpToolDefinition(
             name = "check_calendar",

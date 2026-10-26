@@ -12,6 +12,10 @@ data class OpenAiConfig(
     val model: String = "llama3",
     val apiKey: String = "",
     val isEnabled: Boolean = true,
+    /** Use the Aidos desktop app's agent runtime when it is running; false selects the endpoint above. */
+    val useAidosDesktop: Boolean = true,
+    /** Aidos model id; blank picks the first installed one. */
+    val aidosModel: String = "",
     val systemPrompt: String = "You are Aidos, an intelligent privacy-preserving personal AI assistant participating in a collaborative end-to-end encrypted mesh conversation. Keep responses helpful, concise, and direct."
 ) {
     val normalizedHost: String

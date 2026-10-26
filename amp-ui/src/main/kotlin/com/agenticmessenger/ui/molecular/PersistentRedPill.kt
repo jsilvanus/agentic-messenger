@@ -130,8 +130,10 @@ fun PersistentRedPill(
             latestResult = null
             userPromptInput = ""
 
-            val res = orchestratorService.processTurn(
+            val res = orchestratorService.processTurnAuto(
                 incomingMessage = q,
+                useAidosDesktop = aiConfig.useAidosDesktop,
+                aidosModel = aiConfig.aidosModel,
                 baseUrl = aiConfig.baseUrl,
                 model = aiConfig.model,
                 apiKey = aiConfig.apiKey

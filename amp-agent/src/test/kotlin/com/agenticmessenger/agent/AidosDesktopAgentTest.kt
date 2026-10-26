@@ -97,4 +97,69 @@ class AidosDesktopAgentTest {
         assertNull(AmpAgentService().processTurnViaAidos("hi", "m", endpoint = null))
         assertNotNull(AmpAgentService().processTurnViaAidos("hi", "m", endpoint = AidosEndpoint("http://127.0.0.1:1", "t")))
     }
+
+    /** A real HTTP server standing in for the desktop Aidos app, so the default transport runs too. */
+    private class FakeAidos(val models: String = """{"data":[{"id":"qwen-small"},{"id":"other"}]}""") : AutoCloseable {
+        val requests = mutableListOf<String>()
+        private val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0).apply {
+            fun reply(ex: com.sun.net.httpserver.HttpExchange, body: String) {
+                ex.responseHeaders.add("Content-Type", "application/json")
+                val bytes = body.toByteArray(); ex.sendResponseHeaders(200, bytes.size.toLong()); ex.responseBody.use { it.write(bytes) }
+            }
+            createContext("/v1/models") { ex -> requests += "GET models auth=${ex.requestHeaders.getFirst("Authorization")}"; reply(ex, models) }
+            createContext("/v1/agent/turns") { ex ->
+                val req = Json.parseToJsonElement(ex.requestBody.readBytes().decodeToString()).jsonObject
+                requests += "turn model=${req["model"]!!.jsonPrimitive.content}"
+                reply(ex, """{"status":"completed","reply":"from aidos","steps":1}""")
+            }
+            start()
+        }
+        val endpoint = AidosEndpoint("http://127.0.0.1:${server.address.port}", "tok")
+        override fun close() = server.stop(0)
+    }
+
+    @Test
+    fun autoUsesAidosWithItsFirstModelAndTheToken() = runBlocking {
+        FakeAidos().use { aidos ->
+            val r = AmpAgentService().processTurnAuto("hi", baseUrl = "http://127.0.0.1:1", model = "ignored", endpoint = aidos.endpoint).getOrThrow()
+            assertEquals("from aidos", r.replyText)
+            assertEquals(listOf("GET models auth=Bearer tok", "turn model=qwen-small"), aidos.requests)
+        }
+    }
+
+    @Test
+    fun autoHonoursAnExplicitAidosModelAndNeverCallsModelsThen() = runBlocking {
+        FakeAidos().use { aidos ->
+            AmpAgentService().processTurnAuto("hi", aidosModel = "other", baseUrl = "x", model = "y", endpoint = aidos.endpoint).getOrThrow()
+            assertEquals(listOf("turn model=other"), aidos.requests)
+        }
+    }
+
+    @Test
+    fun autoFailsClearlyWhenAidosHasNoModelAndDoesNotLeakToTheOtherEndpoint() = runBlocking {
+        FakeAidos(models = """{"data":[]}""").use { aidos ->
+            val r = AmpAgentService().processTurnAuto("hi", baseUrl = "http://127.0.0.1:1", model = "y", endpoint = aidos.endpoint)
+            assertTrue(r.exceptionOrNull()!!.message!!.contains("no installed model"))
+            assertEquals(listOf("GET models auth=Bearer tok"), aidos.requests)
+        }
+    }
+
+    @Test
+    fun autoWithAidosNotRunningUsesTheConfiguredEndpoint() = runBlocking {
+        var hit: String? = null
+        val svc = AmpAgentService(customAdapter = object : dev.aidos.kernel.ModelAdapter {
+            override val providerId = "t"; override val modelId = "m"; override val modelVersion = "1"
+            override val contextWindow = 1024; override val isLocal = true
+            override fun supportsNativeToolCalls() = false
+            override suspend fun invoke(request: dev.aidos.kernel.ModelRequest): Result<dev.aidos.kernel.ModelResponse> {
+                hit = "adapter"
+                return Result.success(dev.aidos.kernel.ModelResponse(listOf(dev.aidos.kernel.TextOutput("plain")), dev.aidos.kernel.StopReason.END_TURN, null, null))
+            }
+        })
+        val r = svc.processTurnAuto("hi", baseUrl = "x", model = "y", endpoint = null).getOrThrow()
+        assertEquals("plain", r.replyText)
+        assertEquals("adapter", hit)
+        // opting out of Aidos never even looks for it
+        assertEquals("plain", svc.processTurnAuto("hi", useAidosDesktop = false, baseUrl = "x", model = "y", endpoint = null).getOrThrow().replyText)
+    }
 }

@@ -22,6 +22,15 @@ import java.io.File
 
 /** Where the desktop Aidos app is listening and the token it accepts (`~/.aidos/engine.json`). */
 data class AidosEndpoint(val baseUrl: String, val token: String) {
+    /**
+     * Ids of the models the Engine can serve (`GET /v1/models`), for picking a default. Empty when
+     * the call fails; callers report "no model" rather than guessing one.
+     */
+    suspend fun listModels(get: suspend (url: String, token: String) -> String = ::javaGet): List<String> = runCatching {
+        Json.parseToJsonElement(get("$baseUrl/v1/models", token)).jsonObject["data"]!!.jsonArray
+            .mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull }
+    }.getOrDefault(emptyList())
+
     companion object {
         /** The default discovery file, or the one named by `AIDOS_ENGINE_DISCOVERY`. */
         fun defaultDiscoveryFile(): File =
@@ -131,4 +140,14 @@ class AidosDesktopAgent(
             },
         )
     }
+}
+
+private suspend fun javaGet(url: String, token: String): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    val request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+        .header("Authorization", "Bearer $token")
+        .timeout(java.time.Duration.ofSeconds(10))
+        .GET().build()
+    val response = java.net.http.HttpClient.newHttpClient().send(request, java.net.http.HttpResponse.BodyHandlers.ofString())
+    check(response.statusCode() == 200) { "GET $url -> ${response.statusCode()}" }
+    response.body()
 }

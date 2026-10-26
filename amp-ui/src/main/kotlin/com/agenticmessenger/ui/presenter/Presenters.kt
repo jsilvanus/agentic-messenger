@@ -491,9 +491,11 @@ class ConversationPresenter(
                     )
                 }
 
-            val result = agentService.processTurn(
+            val result = agentService.processTurnAuto(
                 incomingMessage = userPrompt,
                 conversationHistory = recentTurns,
+                useAidosDesktop = openAiConfig.useAidosDesktop,
+                aidosModel = openAiConfig.aidosModel,
                 baseUrl = openAiConfig.baseUrl,
                 model = openAiConfig.model,
                 apiKey = openAiConfig.apiKey,
