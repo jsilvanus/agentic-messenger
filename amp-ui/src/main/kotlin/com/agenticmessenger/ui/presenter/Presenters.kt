@@ -19,6 +19,7 @@ import com.agenticmessenger.agent.AmpAgentService
 import dev.aidos.amp.AmpConversationTurn
 import com.agenticmessenger.ui.ai.OpenAiClient
 import com.agenticmessenger.ui.ai.OpenAiConfig
+import com.agenticmessenger.ui.ai.runAssistantTurn
 import com.agenticmessenger.ui.ai.OpenAiMessage
 import com.agenticmessenger.ui.model.AudioPlaybackUiState
 import com.agenticmessenger.ui.model.ContactFilter
@@ -491,13 +492,8 @@ class ConversationPresenter(
                     )
                 }
 
-            val result = agentService.processTurn(
-                incomingMessage = userPrompt,
-                conversationHistory = recentTurns,
-                baseUrl = openAiConfig.baseUrl,
-                model = openAiConfig.model,
-                apiKey = openAiConfig.apiKey,
-            )
+            // Models are Aidos's: the turn runs in the desktop Aidos app, which decides where inference may go.
+            val result = agentService.runAssistantTurn(openAiConfig, userPrompt, recentTurns)
 
             val (replyText, cueWords) = result.fold(
                 onSuccess = { turnResult ->

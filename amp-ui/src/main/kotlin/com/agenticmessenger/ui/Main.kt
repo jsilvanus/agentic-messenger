@@ -208,6 +208,25 @@ fun OpenAiConfigCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
+                        text = "Use this endpoint directly (bypasses Aidos; off = run through Aidos)",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Switch(
+                        checked = config.useDirectOpenAi,
+                        onCheckedChange = { onConfigChanged(config.copy(useDirectOpenAi = it)) },
+                        modifier = Modifier.height(24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
                         text = "OpenAI Endpoint: ${config.chatCompletionsUrl}",
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,

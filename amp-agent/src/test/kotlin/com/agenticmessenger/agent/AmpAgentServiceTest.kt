@@ -1,13 +1,59 @@
 package com.agenticmessenger.agent
 
 import dev.aidos.amp.AmpConversationTurn
-import dev.aidos.amp.HttpTransport
-import dev.aidos.amp.OpenAiHttpModelAdapter
+import dev.aidos.kernel.ModelAdapter
+import dev.aidos.kernel.ModelRef
+import dev.aidos.kernel.ModelRequest
+import dev.aidos.kernel.ModelResponse
+import dev.aidos.kernel.StopReason
+import dev.aidos.kernel.TextOutput
+import dev.aidos.kernel.ToolCall
+import dev.aidos.kernel.ToolCallOutput
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+
+/** A model that answers with a fixed script, one response per call: what the removed HTTP adapter's mock transport did. */
+private class ScriptedAdapter(private val script: List<ModelResponse>) : ModelAdapter {
+    override val providerId = "test"
+    override val modelId = "scripted"
+    override val modelVersion = "1"
+    override val contextWindow = 4096
+    override val isLocal = true
+    override fun supportsNativeToolCalls() = true
+    private var next = 0
+
+    override suspend fun invoke(request: ModelRequest): Result<ModelResponse> =
+        Result.success(script[minOf(next++, script.lastIndex)])
+}
+
+private fun toolCall(id: String, name: String, argumentsJson: String) = ModelResponse(
+    outputs = listOf(
+        ToolCallOutput(
+            ToolCall(
+                callId = id,
+                toolName = name,
+                arguments = Json.parseToJsonElement(argumentsJson).jsonObject,
+                capabilityId = null,
+                rawText = argumentsJson,
+            )
+        )
+    ),
+    stopReason = StopReason.TOOL_USE,
+    usage = null,
+    model = ModelRef("scripted", "1"),
+)
+
+private fun reply(text: String) = ModelResponse(
+    outputs = listOf(TextOutput(text)),
+    stopReason = StopReason.END_TURN,
+    usage = null,
+    model = ModelRef("scripted", "1"),
+)
 
 class AmpAgentServiceTest {
 
@@ -33,50 +79,10 @@ class AmpAgentServiceTest {
             principalId = "did:aidos:bob"
         )
 
-        var callCount = 0
-        val mockTransport = HttpTransport { _, _, _ ->
-            callCount++
-            if (callCount == 1) {
-                """
-                {
-                  "choices": [
-                    {
-                      "message": {
-                        "role": "assistant",
-                        "tool_calls": [
-                          {
-                            "id": "call_send_1",
-                            "type": "function",
-                            "function": {
-                              "name": "send_chat_message",
-                              "arguments": "{\"recipientName\":\"Bob\",\"messageText\":\"I will be 10 minutes late\"}"
-                            }
-                          }
-                        ]
-                      },
-                      "finish_reason": "tool_calls"
-                    }
-                  ]
-                }
-                """.trimIndent()
-            } else {
-                """
-                {
-                  "choices": [
-                    {
-                      "message": {
-                        "role": "assistant",
-                        "content": "Message sent."
-                      },
-                      "finish_reason": "stop"
-                    }
-                  ]
-                }
-                """.trimIndent()
-            }
-        }
-
-        val adapter = OpenAiHttpModelAdapter(baseUrl = "http://localhost:11434", transport = mockTransport)
+        val adapter = ScriptedAdapter(listOf(
+            toolCall("call_send_1", "send_chat_message", """{"recipientName":"Bob","messageText":"I will be 10 minutes late"}"""),
+            reply("Message sent."),
+        ))
         val customService = AmpAgentService(
             customAdapter = adapter,
             contactLookup = { if (it.contains("bob", true)) bob else null },
@@ -110,50 +116,10 @@ class AmpAgentServiceTest {
             principalId = "did:aidos:bob"
         )
 
-        var callCount = 0
-        val mockTransport = HttpTransport { _, _, _ ->
-            callCount++
-            if (callCount == 1) {
-                """
-                {
-                  "choices": [
-                    {
-                      "message": {
-                        "role": "assistant",
-                        "tool_calls": [
-                          {
-                            "id": "call_send_ghost",
-                            "type": "function",
-                            "function": {
-                              "name": "send_chat_message",
-                              "arguments": "{\"recipientName\":\"Bob\",\"messageText\":\"Hey, see you soon\",\"ghostwrite\":true}"
-                            }
-                          }
-                        ]
-                      },
-                      "finish_reason": "tool_calls"
-                    }
-                  ]
-                }
-                """.trimIndent()
-            } else {
-                """
-                {
-                  "choices": [
-                    {
-                      "message": {
-                        "role": "assistant",
-                        "content": "Message sent as human."
-                      },
-                      "finish_reason": "stop"
-                    }
-                  ]
-                }
-                """.trimIndent()
-            }
-        }
-
-        val adapter = OpenAiHttpModelAdapter(baseUrl = "http://localhost:11434", transport = mockTransport)
+        val adapter = ScriptedAdapter(listOf(
+            toolCall("call_send_ghost", "send_chat_message", """{"recipientName":"Bob","messageText":"Hey, see you soon","ghostwrite":true}"""),
+            reply("Message sent as human."),
+        ))
         val customService = AmpAgentService(
             customAdapter = adapter,
             contactLookup = { if (it.contains("bob", true)) bob else null },
@@ -185,50 +151,10 @@ class AmpAgentServiceTest {
             principalId = "did:aidos:alice"
         )
 
-        var callCount = 0
-        val mockTransport = HttpTransport { _, _, _ ->
-            callCount++
-            if (callCount == 1) {
-                """
-                {
-                  "choices": [
-                    {
-                      "message": {
-                        "role": "assistant",
-                        "tool_calls": [
-                          {
-                            "id": "call_query_1",
-                            "type": "function",
-                            "function": {
-                              "name": "query_chat_messages",
-                              "arguments": "{\"contactName\":\"Alice\",\"limit\":3}"
-                            }
-                          }
-                        ]
-                      },
-                      "finish_reason": "tool_calls"
-                    }
-                  ]
-                }
-                """.trimIndent()
-            } else {
-                """
-                {
-                  "choices": [
-                    {
-                      "message": {
-                        "role": "assistant",
-                        "content": "Alice's recent messages checked."
-                      },
-                      "finish_reason": "stop"
-                    }
-                  ]
-                }
-                """.trimIndent()
-            }
-        }
-
-        val adapter = OpenAiHttpModelAdapter(baseUrl = "http://localhost:11434", transport = mockTransport)
+        val adapter = ScriptedAdapter(listOf(
+            toolCall("call_query_1", "query_chat_messages", """{"contactName":"Alice","limit":3}"""),
+            reply("Alice's recent messages checked."),
+        ))
         val customService = AmpAgentService(
             customAdapter = adapter,
             contactLookup = { if (it.contains("alice", true)) alice else null },
