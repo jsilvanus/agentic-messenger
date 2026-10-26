@@ -491,13 +491,12 @@ class ConversationPresenter(
                     )
                 }
 
-            val result = agentService.processTurn(
+            // Models are Aidos's: the turn runs in the desktop Aidos app, which decides where inference may go.
+            val result = agentService.processTurnViaAidos(
                 incomingMessage = userPrompt,
+                model = openAiConfig.aidosModel,
                 conversationHistory = recentTurns,
-                baseUrl = openAiConfig.baseUrl,
-                model = openAiConfig.model,
-                apiKey = openAiConfig.apiKey,
-            )
+            ) ?: Result.failure(IllegalStateException("Aidos is not running. Start the Aidos desktop app; the assistant's models run there."))
 
             val (replyText, cueWords) = result.fold(
                 onSuccess = { turnResult ->

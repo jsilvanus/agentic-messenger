@@ -62,12 +62,15 @@ class AidosDesktopAgent(
         incomingMessage: String,
         history: List<AmpConversationTurn>,
         tools: List<AmpToolDefinition>,
+        /** `local_only`, `trusted_cluster` or `any` (aidos RFC-0104); null: Aidos decides, and says local only. */
+        locality: String? = null,
     ): Result<AmpAgentTurnResult> = runCatching {
         val byName = tools.associateBy { it.name }
         var response = post("/v1/agent/turns", buildJsonObject {
             put("model", model)
             put("message", incomingMessage)
             put("systemPrompt", systemPrompt)
+            locality?.let { put("locality", it) }
             put("history", buildJsonArray {
                 history.forEach { add(buildJsonObject { put("role", it.role); put("text", it.text); it.senderId?.let { s -> put("senderId", s) } }) }
             })

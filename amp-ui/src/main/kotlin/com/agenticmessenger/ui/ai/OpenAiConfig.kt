@@ -10,6 +10,8 @@ data class OpenAiConfig(
     val host: String = "localhost",
     val port: Int = 11434, // Default Ollama port (8000 for Aidos / LocalAI)
     val model: String = "llama3",
+    /** The model id in Aidos (`/v1/models`) that agent turns use; a provider's models are `<provider>:<model>`. */
+    val aidosModel: String = "ollama:llama3",
     val apiKey: String = "",
     val isEnabled: Boolean = true,
     val systemPrompt: String = "You are Aidos, an intelligent privacy-preserving personal AI assistant participating in a collaborative end-to-end encrypted mesh conversation. Keep responses helpful, concise, and direct."

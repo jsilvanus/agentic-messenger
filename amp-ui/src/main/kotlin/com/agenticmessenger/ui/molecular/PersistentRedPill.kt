@@ -130,12 +130,10 @@ fun PersistentRedPill(
             latestResult = null
             userPromptInput = ""
 
-            val res = orchestratorService.processTurn(
+            val res = orchestratorService.processTurnViaAidos(
                 incomingMessage = q,
-                baseUrl = aiConfig.baseUrl,
-                model = aiConfig.model,
-                apiKey = aiConfig.apiKey
-            )
+                model = aiConfig.aidosModel,
+            ) ?: Result.failure(IllegalStateException("Aidos is not running. Start the Aidos desktop app; the assistant's models run there."))
 
             res.fold(
                 onSuccess = { turnResult ->
