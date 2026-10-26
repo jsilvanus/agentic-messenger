@@ -12,6 +12,12 @@ data class OpenAiConfig(
     val model: String = "llama3",
     /** The model id in Aidos (`/v1/models`) that agent turns use; a provider's models are `<provider>:<model>`. */
     val aidosModel: String = "ollama:llama3",
+    /**
+     * User selection. Off (the default): turns run through the desktop Aidos app, which owns the
+     * models and enforces where inference may go. On: this client talks to the endpoint above
+     * itself (Ollama, vLLM, LocalAI), outside Aidos's locality rules.
+     */
+    val useDirectOpenAi: Boolean = false,
     val apiKey: String = "",
     val isEnabled: Boolean = true,
     val systemPrompt: String = "You are Aidos, an intelligent privacy-preserving personal AI assistant participating in a collaborative end-to-end encrypted mesh conversation. Keep responses helpful, concise, and direct."

@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,7 +55,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agenticmessenger.agent.AmpAgentService
 import com.agenticmessenger.agent.ContactDescriptor
+import com.agenticmessenger.ui.ai.OpenAiClient
 import com.agenticmessenger.ui.ai.OpenAiConfig
+import com.agenticmessenger.ui.ai.runAssistantTurn
+import com.agenticmessenger.ui.presenter.OpenAiClientModelAdapter
 import com.agenticmessenger.ui.model.ContactUiModel
 import dev.aidos.amp.AmpAgentTurnResult
 import dev.aidos.amp.AmpConversationTurn
@@ -79,6 +83,7 @@ fun PersistentRedPill(
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
+    val currentConfig = rememberUpdatedState(aiConfig)
     var isExpanded by remember { mutableStateOf(false) }
     var userPromptInput by remember { mutableStateOf("") }
     var isExecuting by remember { mutableStateOf(false) }
@@ -100,6 +105,7 @@ fun PersistentRedPill(
     // Wire orchestrator service with cross-chat callbacks
     val orchestratorService = remember(contacts) {
         AmpAgentService(
+            customAdapter = OpenAiClientModelAdapter(OpenAiClient()) { currentConfig.value },
             contactLookup = { query ->
                 contacts.firstOrNull {
                     it.displayName.contains(query, ignoreCase = true) ||
@@ -130,10 +136,7 @@ fun PersistentRedPill(
             latestResult = null
             userPromptInput = ""
 
-            val res = orchestratorService.processTurnViaAidos(
-                incomingMessage = q,
-                model = aiConfig.aidosModel,
-            ) ?: Result.failure(IllegalStateException("Aidos is not running. Start the Aidos desktop app; the assistant's models run there."))
+            val res = orchestratorService.runAssistantTurn(aiConfig, q)
 
             res.fold(
                 onSuccess = { turnResult ->
