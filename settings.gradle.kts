@@ -21,6 +21,7 @@ include(":amp-server")
 include(":amp-ui")
 include(":amp-client-sdk")
 include(":amp-agent")
+include(":amp-mcp")
 
 val aidosAgentDir = listOfNotNull(
     System.getenv("AIDOS_AGENT_DIR")?.let { file(it) },

@@ -47,6 +47,9 @@ class AmpAgentService(
 
     private val tools: List<AmpToolDefinition> = buildDefaultTools() + customTools
 
+    /** The tools this service runs for an agent; `amp-mcp` publishes a chosen subset of them to other apps. */
+    val toolDefinitions: List<AmpToolDefinition> get() = tools
+
     /**
      * Processes an incoming message through the embedded Aidos agent runner with [customAdapter].
      * There is no built-in model connection: models are Aidos's. Without an adapter this fails, and
