@@ -24,6 +24,7 @@ include(":amp-agent")
 
 val aidosAgentDir = listOfNotNull(
     System.getenv("AIDOS_AGENT_DIR")?.let { file(it) },
+    file("../../aidos/project_status_roadmap_review/agent"),
     file("D:/aidos/agent"),
     file("../aidos/agent"),
     file("../../aidos/integrate_aidos_agent_base/agent")

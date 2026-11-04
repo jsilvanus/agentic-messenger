@@ -706,4 +706,84 @@ class AmpUiTest {
         presenter.toggleSendViewedReceipts()
         assertTrue(presenter.state.value.sendViewedReceipts)
     }
+
+
+    @Test
+    fun testDictatorRedPillAudioToAmpPipelineEndToEnd() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(testDispatcher)
+
+        // 1. Simulate Dictator Red Pill audio capture (16kHz PCM mono 16-bit frames)
+        // Synthesize a 500ms 440Hz sine wave tone
+        val sampleRate = 16_000
+        val durationSeconds = 0.5
+        val totalSamples = (sampleRate * durationSeconds).toInt()
+        val pcm = ShortArray(totalSamples) { i ->
+            (kotlin.math.sin(2.0 * kotlin.math.PI * 440.0 * i / sampleRate) * 16000.0).toInt().toShort()
+        }
+
+        // 2. Dictator WavEncoder containerization (RIFF WAVE header)
+        val dataSize = pcm.size * 2
+        val wavBytes = ByteArray(44 + dataSize)
+        fun putInt(at: Int, v: Int) { for (i in 0..3) wavBytes[at + i] = (v shr (8 * i)).toByte() }
+        fun putShort(at: Int, v: Int) { wavBytes[at] = v.toByte(); wavBytes[at + 1] = (v shr 8).toByte() }
+        "RIFF".forEachIndexed { i, c -> wavBytes[i] = c.code.toByte() }
+        putInt(4, 36 + dataSize)
+        "WAVEfmt ".forEachIndexed { i, c -> wavBytes[8 + i] = c.code.toByte() }
+        putInt(16, 16)
+        putShort(20, 1)            // PCM
+        putShort(22, 1)            // mono
+        putInt(24, sampleRate)
+        putInt(28, sampleRate * 2) // byte rate
+        putShort(32, 2)            // block align
+        putShort(34, 16)           // bits per sample
+        "data".forEachIndexed { i, c -> wavBytes[36 + i] = c.code.toByte() }
+        putInt(40, dataSize)
+        for (i in pcm.indices) putShort(44 + i * 2, pcm[i].toInt())
+
+        // 3. Base64 encoding as used by Dictator AidosSpeechEngine
+        val base64Wav = java.util.Base64.getEncoder().encodeToString(wavBytes)
+        val calculatedDurationMs = (totalSamples * 1000L) / sampleRate
+
+        // 4. Dispatch through AMP ConversationPresenter adopting Dictator's TCR voice flow
+        val presenter = ConversationPresenter(
+            scope = scope,
+            currentUserId = "did:aidos:jack",
+            currentDeviceKeyId = "key_jack_phone"
+        )
+
+        presenter.sendSealedVoiceNote(
+            audioBase64 = base64Wav,
+            durationMs = calculatedDurationMs,
+            transcript = "Tell John I will be late. My car broke down."
+        )
+
+        // 5. Assertions on UI timeline state
+        val items = presenter.state.value.items
+        assertEquals(1, items.size)
+        val voiceMsg = items.first() as TimelineItemUiModel.Message
+
+        assertEquals(PrivacyLevel.HUMAN_ONLY, voiceMsg.privacyLevel)
+        assertTrue(voiceMsg.isShieldedVoice)
+        assertEquals("Tell John I will be late. My car broke down.", voiceMsg.shieldedSttTranscript)
+        assertNotNull(voiceMsg.audioPlayback)
+        assertEquals(500L, voiceMsg.audioPlayback?.durationMs)
+        assertTrue(voiceMsg.isSttVisible)
+        assertEquals(1, voiceMsg.attachments.size)
+
+        val voiceAttachment = voiceMsg.attachments.first()
+        assertEquals(AttachmentType.VOICE_NOTE, voiceAttachment.type)
+        assertEquals(base64Wav, voiceAttachment.inlineBase64)
+
+        // 6. Verify recipient privacy opt-out toggle (Shielded STT)
+        presenter.toggleSttVisibility(voiceMsg.id)
+        val optedOut = presenter.state.value.items.first() as TimelineItemUiModel.Message
+        assertFalse(optedOut.isSttVisible, "Recipient opted out of transcript display")
+
+        // 7. Verify unshielding for local AI co-pilot
+        presenter.unshieldMessageForAi(voiceMsg.id)
+        testScheduler.advanceUntilIdle()
+        val unshielded = presenter.state.value.items.first() as TimelineItemUiModel.Message
+        assertTrue(unshielded.isUnshieldedForAi)
+    }
 }
