@@ -23,6 +23,9 @@ import com.agenticmessenger.relay.router.MailboxRouter
 import com.agenticmessenger.relay.service.RelayService
 import com.agenticmessenger.relay.storage.EncryptedBlobStorage
 import com.agenticmessenger.ui.ai.OpenAiClient
+import com.agenticmessenger.ui.molecular.RedPillTextMode
+import com.agenticmessenger.ui.molecular.PipSymbolShape
+import com.agenticmessenger.ui.molecular.RedPillHistoryEntry
 import com.agenticmessenger.ui.ai.OpenAiConfig
 import com.agenticmessenger.ui.ai.OpenAiMessage
 import com.agenticmessenger.ui.generative.GenerativeUiRegistry
@@ -785,5 +788,38 @@ class AmpUiTest {
         testScheduler.advanceUntilIdle()
         val unshielded = presenter.state.value.items.first() as TimelineItemUiModel.Message
         assertTrue(unshielded.isUnshieldedForAi)
+    }
+
+    @Test
+    fun testRedPillAestheticModesAndPipShapes() {
+        // 1. Verify text modes
+        val modes = RedPillTextMode.values().map { it.name }.toSet()
+        assertTrue("NONE" in modes)
+        assertTrue("THOUGHT_BUBBLE" in modes)
+        assertTrue("QUESTION_BUBBLE" in modes)
+        assertTrue("CONVERSATION_HISTORY" in modes)
+
+        // 2. Verify pip symbol shapes (morphing states)
+        val shapes = PipSymbolShape.values().map { it.name }.toSet()
+        assertTrue("CIRCLE" in shapes)
+        assertTrue("DIAMOND" in shapes)
+        assertTrue("STAR" in shapes)
+        assertTrue("QUESTION" in shapes)
+        assertTrue("CHECK" in shapes)
+        assertTrue("MIC" in shapes)
+        assertTrue("CLOCK" in shapes)
+
+        // 3. Verify history entry creation
+        val entry = RedPillHistoryEntry(
+            id = "test_entry_1",
+            speaker = "Aidos",
+            text = "Drafting cross-chat response",
+            isFromUser = false,
+            executedTools = listOf("fetchMessages", "searchContacts")
+        )
+        assertEquals("test_entry_1", entry.id)
+        assertEquals("Aidos", entry.speaker)
+        assertFalse(entry.isFromUser)
+        assertEquals(2, entry.executedTools.size)
     }
 }
