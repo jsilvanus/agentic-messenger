@@ -23,6 +23,12 @@ import com.agenticmessenger.relay.router.MailboxRouter
 import com.agenticmessenger.relay.service.RelayService
 import com.agenticmessenger.relay.storage.EncryptedBlobStorage
 import com.agenticmessenger.ui.ai.OpenAiClient
+import com.agenticmessenger.ui.molecular.PillProjectionStyle
+import com.agenticmessenger.ui.molecular.ProjectedPillInstance
+import com.agenticmessenger.ui.molecular.TargetConeHighlight
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import com.agenticmessenger.ui.molecular.RedPillTextMode
 import com.agenticmessenger.ui.molecular.PipSymbolShape
 import com.agenticmessenger.ui.molecular.RedPillHistoryEntry
@@ -821,5 +827,38 @@ class AmpUiTest {
         assertEquals("Aidos", entry.speaker)
         assertFalse(entry.isFromUser)
         assertEquals(2, entry.executedTools.size)
+    }
+
+    @Test
+    fun testRedPillProjectionsAndConeHighlight() {
+        // 1. Verify 3 projection styles
+        val styles = PillProjectionStyle.values().map { it.name }.toSet()
+        assertEquals(3, styles.size)
+        assertTrue("BEAM_TELEPORT" in styles)
+        assertTrue("MITOSIS_EJECT" in styles)
+        assertTrue("HOLOGRAPHIC_MATERIALIZE" in styles)
+
+        // 2. Verify projected pill instance
+        val instance = ProjectedPillInstance(
+            id = "proj_1",
+            name = "Editor Worker",
+            roleColor = Color(0xFF3B82F6),
+            targetOffset = Offset(200f, 100f),
+            style = PillProjectionStyle.BEAM_TELEPORT
+        )
+        assertEquals("proj_1", instance.id)
+        assertEquals("Editor Worker", instance.name)
+        assertEquals(PillProjectionStyle.BEAM_TELEPORT, instance.style)
+
+        // 3. Verify target projection cone highlight
+        val cone = TargetConeHighlight(
+            label = "Important Paraphrase",
+            targetOffset = Offset(50f, 150f),
+            targetSize = Size(120f, 25f),
+            color = Color(0xFFF97316)
+        )
+        assertEquals("Important Paraphrase", cone.label)
+        assertEquals(Offset(50f, 150f), cone.targetOffset)
+        assertEquals(Color(0xFFF97316), cone.color)
     }
 }

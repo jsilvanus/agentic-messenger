@@ -1,6 +1,8 @@
 package com.agenticmessenger.ui.molecular
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -12,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -40,7 +44,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,15 +58,21 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agenticmessenger.agent.AmpAgentService
@@ -70,6 +82,9 @@ import com.agenticmessenger.ui.model.ContactUiModel
 import dev.aidos.amp.AmpAgentTurnResult
 import dev.aidos.amp.AmpConversationTurn
 import kotlinx.coroutines.launch
+import kotlin.math.atan2
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * Text display UI modes supported by the Red Pill.
@@ -102,6 +117,48 @@ enum class PipSymbolShape {
 }
 
 /**
+ * 3 distinct animation styles for how the Orchestrator (Red Pill) projects a new pill into existence.
+ */
+enum class PillProjectionStyle {
+    /** Radiant laser conduit that energizes and snaps target pill into existence. */
+    BEAM_TELEPORT,
+
+    /** Elastic budding from orchestrator body, slingshot ejection, and damped bounce. */
+    MITOSIS_EJECT,
+
+    /** Expanding quantum wireframe reticle and holographic scan-lines condensing into the pill. */
+    HOLOGRAPHIC_MATERIALIZE
+}
+
+/**
+ * Custom fast-go, fast-stop easing curve:
+ * Covers ~85% of transit distance in first ~30% time with immense acceleration,
+ * followed by velocity cruise and an immediate high-damping tactile snap stop.
+ */
+val FastGoFastStopEasing = CubicBezierEasing(0.05f, 0.95f, 0.10f, 1.0f)
+
+/**
+ * Active projected worker pill spawned by the Red Pill Orchestrator.
+ */
+data class ProjectedPillInstance(
+    val id: String,
+    val name: String,
+    val roleColor: Color,
+    val targetOffset: Offset,
+    val style: PillProjectionStyle
+)
+
+/**
+ * Target document object highlighted by the volumetric projection cone.
+ */
+data class TargetConeHighlight(
+    val label: String,
+    val targetOffset: Offset,
+    val targetSize: Size,
+    val color: Color = Color(0xFFF97316) // Warm orange-ish default
+)
+
+/**
  * Recorded multi-turn interaction entry for Mode c (Conversation History).
  */
 data class RedPillHistoryEntry(
@@ -117,14 +174,16 @@ data class RedPillHistoryEntry(
  * Molecular component inspired by Dictator's Ember Red Pill (0xFFEF4444):
  * A persistent interactive capsule representing the User-Level AI Orchestrator.
  *
- * Enhanced Aesthetics:
- * - Hover physics with vertical oscillation, dynamic elevation, dual-tone shadows, and ground cast shadow.
- * - Sleek multi-tone vertical gradient body with top specular highlight border.
- * - Indicator pip that morphs color and shape to signal operational states (idle, listening, thinking, question, done).
- * - 3 basic text display UI modes:
- *     a) Warm beige-ish thought bubble with dashed outline and thought-trail pips.
- *     b) Warm beige-ish question bubble (pill glyph becomes '?') with interactive input field.
- *     c) Full-blown conversation history drawer with multi-turn messages and prompt entry.
+ * Enhanced Capabilities:
+ * - Orchestrator Pill Projection: 3 animations to project new pills into existence
+ *     1. Beam-Teleport (laser conduit & photon collapse)
+ *     2. Mitosis / Fission Ejection (elastic budding & slingshot)
+ *     3. Holographic Materialization (cybernetic reticle & scanlines)
+ * - Autonomous Fast-Go / Fast-Stop relocation across the workspace
+ * - Volumetric Orange-ish Projection Cone highlighting target document objects (words, paraphrases)
+ * - 3 basic text display UI modes (Thought bubble, Question bubble, Conversation history)
+ * - Symbol-information morphing indicator pip (idle, listening, thinking, question, done)
+ * - Hover physics with dynamic elevation, dual-tone shadows, and ground cast shadow
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -144,6 +203,42 @@ fun PersistentRedPill(
     var isExecuting by remember { mutableStateOf(false) }
     var latestResult by remember { mutableStateOf<AmpAgentTurnResult?>(null) }
     var executionError by remember { mutableStateOf<String?>(null) }
+
+    // Active pill projection & target cone highlight states
+    var activeProjection by remember { mutableStateOf<ProjectedPillInstance?>(null) }
+    var activeTargetCone by remember { mutableStateOf<TargetConeHighlight?>(null) }
+    val projectedPills = remember { mutableStateListOf<ProjectedPillInstance>() }
+
+    // Autonomous fast-go, fast-stop relocation offset
+    var isSnapMoved by remember { mutableStateOf(false) }
+    val autonomousOffsetX = remember { Animatable(0f) }
+
+    fun triggerAutonomousSnapRelocation() {
+        scope.launch {
+            val targetX = if (isSnapMoved) 0f else 60f
+            isSnapMoved = !isSnapMoved
+            autonomousOffsetX.animateTo(
+                targetValue = targetX,
+                animationSpec = tween(durationMillis = 320, easing = FastGoFastStopEasing)
+            )
+        }
+    }
+
+    fun projectNewPill(style: PillProjectionStyle) {
+        val (name, color, offset) = when (style) {
+            PillProjectionStyle.BEAM_TELEPORT -> Triple("Editor", Color(0xFF3B82F6), Offset(240f, 60f))
+            PillProjectionStyle.MITOSIS_EJECT -> Triple("AI Gen", Color(0xFF10B981), Offset(180f, 75f))
+            PillProjectionStyle.HOLOGRAPHIC_MATERIALIZE -> Triple("Analyst", Color(0xFF8B5CF6), Offset(300f, 70f))
+        }
+        val instance = ProjectedPillInstance(
+            id = "proj_${System.currentTimeMillis()}",
+            name = name,
+            roleColor = color,
+            targetOffset = offset,
+            style = style
+        )
+        activeProjection = instance
+    }
 
     // Multi-turn conversation history
     val historyEntries = remember {
@@ -278,6 +373,197 @@ fun PersistentRedPill(
             .padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Volumetric Orange-ish Target Projection Cone
+        activeTargetCone?.let { cone ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(90.dp)
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val srcX = size.width / 2f
+                    val srcY = 0f
+                    val tgtLeft = cone.targetOffset.x
+                    val tgtRight = tgtLeft + cone.targetSize.width
+                    val tgtTop = cone.targetOffset.y
+                    val tgtHeight = cone.targetSize.height
+
+                    val conePath = Path().apply {
+                        moveTo(srcX, srcY)
+                        lineTo(tgtLeft, tgtTop)
+                        lineTo(tgtRight, tgtTop)
+                        close()
+                    }
+
+                    // Volumetric gradient
+                    drawPath(
+                        path = conePath,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                cone.color.copy(alpha = 0.55f),
+                                cone.color.copy(alpha = 0.22f),
+                                cone.color.copy(alpha = 0.08f)
+                            ),
+                            startY = srcY,
+                            endY = tgtTop
+                        )
+                    )
+
+                    // Target Highlight Box
+                    drawRoundRect(
+                        color = cone.color.copy(alpha = 0.22f),
+                        topLeft = Offset(tgtLeft, tgtTop),
+                        size = Size(cone.targetSize.width, tgtHeight),
+                        cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                    )
+                    drawRoundRect(
+                        color = cone.color,
+                        topLeft = Offset(tgtLeft, tgtTop),
+                        size = Size(cone.targetSize.width, tgtHeight),
+                        cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
+                        style = Stroke(width = 1.25.dp.toPx())
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = cone.color,
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                x = cone.targetOffset.x.roundToInt(),
+                                y = (cone.targetOffset.y - 18.dp.toPx()).roundToInt().coerceAtLeast(0)
+                            )
+                        }
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = "Target: ${cone.label}",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // Active Spawning Animation Overlay (Beam, Mitosis, or Holographic)
+        activeProjection?.let { proj ->
+            val animProgress = remember(proj.id) { Animatable(0f) }
+            LaunchedEffect(proj.id) {
+                animProgress.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = 650, easing = FastGoFastStopEasing)
+                )
+                projectedPills.add(proj)
+                activeProjection = null
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp)
+            ) {
+                val p = animProgress.value
+                val dst = proj.targetOffset
+
+                when (proj.style) {
+                    PillProjectionStyle.BEAM_TELEPORT -> {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val src = Offset(size.width / 2f, 0f)
+                            val beamLen = (p / 0.85f).coerceIn(0f, 1f)
+                            val end = Offset(src.x + (dst.x - src.x) * beamLen, src.y + (dst.y - src.y) * beamLen)
+
+                            // Radiant Conduit
+                            drawLine(
+                                brush = Brush.linearGradient(
+                                    colors = listOf(Color(0xFFEF4444), proj.roleColor),
+                                    start = src,
+                                    end = end
+                                ),
+                                start = src,
+                                end = end,
+                                strokeWidth = 5.dp.toPx() * (1f - p * 0.4f),
+                                cap = StrokeCap.Round
+                            )
+                            drawLine(
+                                color = Color.White,
+                                start = src,
+                                end = end,
+                                strokeWidth = 2.dp.toPx(),
+                                cap = StrokeCap.Round
+                            )
+
+                            // Terminal Photon Condensation Ring
+                            if (p > 0.4f) {
+                                val ringP = (p - 0.4f) / 0.6f
+                                val r = 24.dp.toPx() * (1f - ringP)
+                                drawCircle(
+                                    color = proj.roleColor.copy(alpha = 1f - ringP),
+                                    radius = r,
+                                    center = dst,
+                                    style = Stroke(width = 2.dp.toPx())
+                                )
+                            }
+                        }
+                    }
+                    PillProjectionStyle.MITOSIS_EJECT -> {
+                        val srcX = 140f
+                        val srcY = 0f
+                        val curX = srcX + (dst.x - srcX) * p
+                        val curY = srcY + (dst.y - srcY) * p
+                        val stretch = 1f + sin(p * Math.PI.toFloat()) * 0.35f
+
+                        if (p < 0.4f) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                drawLine(
+                                    color = Color(0xFFEF4444).copy(alpha = 1f - p / 0.4f),
+                                    start = Offset(srcX, srcY),
+                                    end = Offset(curX, curY),
+                                    strokeWidth = 3.dp.toPx(),
+                                    cap = StrokeCap.Round
+                                )
+                            }
+                        }
+                        Box(
+                            modifier = Modifier
+                                .offset { IntOffset(curX.roundToInt(), curY.roundToInt()) }
+                                .scale(scaleX = stretch, scaleY = 1f / stretch)
+                                .size(24.dp, 14.dp)
+                                .background(proj.roleColor, shape = CircleShape)
+                                .border(1.dp, Color.White.copy(alpha = 0.6f), shape = CircleShape)
+                        )
+                    }
+                    PillProjectionStyle.HOLOGRAPHIC_MATERIALIZE -> {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val src = Offset(size.width / 2f, 0f)
+                            // Hologram laser sweep
+                            drawLine(
+                                color = proj.roleColor.copy(alpha = 0.35f),
+                                start = src,
+                                end = dst,
+                                strokeWidth = 1.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f), 0f)
+                            )
+                            // Reticle
+                            drawCircle(
+                                color = proj.roleColor.copy(alpha = p * 0.7f),
+                                radius = 18.dp.toPx() * (1f - p * 0.2f),
+                                center = dst,
+                                style = Stroke(width = 1.2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 5f), 0f))
+                            )
+                            drawRoundRect(
+                                color = proj.roleColor.copy(alpha = p),
+                                topLeft = Offset(dst.x - 12.dp.toPx(), dst.y - 7.dp.toPx()),
+                                size = Size(24.dp.toPx(), 14.dp.toPx()),
+                                cornerRadius = CornerRadius(7.dp.toPx(), 7.dp.toPx())
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Mode a) Beige-ish Thought Bubble (Dashed outline)
         AnimatedVisibility(
             visible = currentTextMode == RedPillTextMode.THOUGHT_BUBBLE,
@@ -415,10 +701,10 @@ fun PersistentRedPill(
             }
         }
 
-        // 1. The Floating Red Pill Capsule (Hover physics & body gradient)
+        // 1. The Floating Red Pill Capsule (Hover physics, body gradient, and fast-go snap motion)
         Box(
             modifier = Modifier
-                .offset(y = hoverOffset.dp)
+                .offset { IntOffset(x = autonomousOffsetX.value.roundToInt(), y = hoverOffset.roundToInt()) }
                 .fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
@@ -599,7 +885,7 @@ fun PersistentRedPill(
             }
         }
 
-        // Cast shadow on the ground underneath the hover capsule
+        // Ground cast shadow underneath the hover capsule
         Box(
             modifier = Modifier
                 .padding(top = 2.dp)
@@ -608,6 +894,124 @@ fun PersistentRedPill(
                 .alpha((0.35f - (-hoverOffset * 0.05f)).coerceIn(0.1f, 0.4f))
                 .background(Color.Black.copy(alpha = 0.45f), shape = CircleShape)
         )
+
+        // Render Projected Child Pills spawned by Orchestrator
+        if (projectedPills.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                for (proj in projectedPills) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = proj.roleColor.copy(alpha = 0.18f),
+                        border = BorderStroke(1.dp, proj.roleColor),
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(proj.roleColor, shape = CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "✨ ${proj.name}",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = proj.roleColor
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Orchestrator Action Toolbar: Pill Projections, Cone Highlight & Snap Move
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = Color.Black.copy(alpha = 0.05f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Orchestrator Actions:",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Gray
+                )
+
+                // 3 Pill Projections
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF3B82F6).copy(alpha = 0.18f))
+                        .clickable { projectNewPill(PillProjectionStyle.BEAM_TELEPORT) }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("⚡ Beam Pill", fontSize = 9.sp, color = Color(0xFF1D4ED8), fontWeight = FontWeight.Medium)
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF10B981).copy(alpha = 0.18f))
+                        .clickable { projectNewPill(PillProjectionStyle.MITOSIS_EJECT) }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("🧬 Mitosis Pill", fontSize = 9.sp, color = Color(0xFF047857), fontWeight = FontWeight.Medium)
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF8B5CF6).copy(alpha = 0.18f))
+                        .clickable { projectNewPill(PillProjectionStyle.HOLOGRAPHIC_MATERIALIZE) }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("📡 Holo Pill", fontSize = 9.sp, color = Color(0xFF6D28D9), fontWeight = FontWeight.Medium)
+                }
+
+                // Orange Target Projection Cone
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFFF97316).copy(alpha = if (activeTargetCone != null) 0.35f else 0.18f))
+                        .clickable {
+                            activeTargetCone = if (activeTargetCone != null) null else TargetConeHighlight(
+                                label = "Key Action",
+                                targetOffset = Offset(80f, 60f),
+                                targetSize = Size(140f, 24f)
+                            )
+                        }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(if (activeTargetCone != null) "🔦 Cone Active" else "🔦 Cone", fontSize = 9.sp, color = Color(0xFFC2410C), fontWeight = FontWeight.Medium)
+                }
+
+                // Autonomous Fast-Go / Fast-Stop Relocation
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFFEF4444).copy(alpha = 0.18f))
+                        .clickable { triggerAutonomousSnapRelocation() }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("⚡ Snap Move", fontSize = 9.sp, color = Color(0xFFB91C1C), fontWeight = FontWeight.Medium)
+                }
+            }
+        }
 
         // Mode c) Full-blown Conversation History HUD and entry box
         AnimatedVisibility(
