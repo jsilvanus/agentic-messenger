@@ -8,6 +8,7 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
+        mavenLocal()
         mavenCentral()
         google()
     }
@@ -38,4 +39,14 @@ if (aidosAgentDir != null) {
             substitute(module("dev.aidos:kernel")).using(project(":kernel"))
         }
     }
+}
+
+val aidosTcrCandidates = listOf(
+    file("../aidos-tcr"),
+    file("D:/aidos-tcr"),
+    file("c:/Users/jsilv/Code/aidos-tcr")
+)
+val aidosTcrDir = aidosTcrCandidates.firstOrNull { it.exists() && it.isDirectory }
+if (aidosTcrDir != null) {
+    includeBuild(aidosTcrDir)
 }

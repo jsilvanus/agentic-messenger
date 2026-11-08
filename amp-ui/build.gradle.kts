@@ -10,6 +10,7 @@ dependencies {
     implementation(project(":amp-crypto"))
     implementation(project(":amp-client-sdk"))
     implementation(project(":amp-agent"))
+    implementation("dev.aidos.tcr:aidos-tcr:0.1.0")
     implementation("dev.aidos:kernel")
     implementation("dev.aidos:agent-amp")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
