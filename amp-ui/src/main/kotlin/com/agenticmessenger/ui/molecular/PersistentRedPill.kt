@@ -5,12 +5,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.agenticmessenger.agent.AmpAgentService
 import com.agenticmessenger.agent.ContactDescriptor
+import com.agenticmessenger.ui.ai.OpenAiClient
 import com.agenticmessenger.ui.ai.OpenAiConfig
+import com.agenticmessenger.ui.ai.runAssistantTurn
+import com.agenticmessenger.ui.presenter.OpenAiClientModelAdapter
 import com.agenticmessenger.ui.model.ContactUiModel
 import dev.aidos.amp.AmpConversationTurn
 import kotlinx.coroutines.launch
@@ -45,6 +49,7 @@ fun PersistentRedPill(
     pendingQuestionPrompt: String = "Would you like me to draft a follow-up reply?",
 ) {
     val scope = rememberCoroutineScope()
+    val currentConfig = rememberUpdatedState(aiConfig)
     var isExecuting by remember { mutableStateOf(false) }
     var executionError by remember { mutableStateOf<String?>(null) }
     val historyEntries = remember {
@@ -60,6 +65,7 @@ fun PersistentRedPill(
 
     val orchestratorService = remember(contacts) {
         AmpAgentService(
+            customAdapter = OpenAiClientModelAdapter(OpenAiClient()) { currentConfig.value },
             contactLookup = { query ->
                 contacts.firstOrNull {
                     it.displayName.contains(query, ignoreCase = true) ||
@@ -97,12 +103,7 @@ fun PersistentRedPill(
             isExecuting = true
             executionError = null
 
-            val res = orchestratorService.processTurn(
-                incomingMessage = q,
-                baseUrl = aiConfig.baseUrl,
-                model = aiConfig.model,
-                apiKey = aiConfig.apiKey
-            )
+            val res = orchestratorService.runAssistantTurn(aiConfig, q)
 
             res.fold(
                 onSuccess = { turnResult ->

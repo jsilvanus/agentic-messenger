@@ -5,7 +5,6 @@ import dev.aidos.amp.AmpAgentTurnResult
 import dev.aidos.amp.AmpConversationTurn
 import dev.aidos.amp.AmpToolDefinition
 import dev.aidos.amp.AmpToolExecutionResult
-import dev.aidos.amp.OpenAiHttpModelAdapter
 import dev.aidos.kernel.ModelAdapter
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonArray
@@ -48,22 +47,20 @@ class AmpAgentService(
 
     private val tools: List<AmpToolDefinition> = buildDefaultTools() + customTools
 
+    /** The tools this service runs for an agent; `amp-mcp` publishes a chosen subset of them to other apps. */
+    val toolDefinitions: List<AmpToolDefinition> get() = tools
+
     /**
-     * Processes an incoming message through the Aidos Agent Runner,
-     * executing local model reasoning and tool calling.
+     * Processes an incoming message through the embedded Aidos agent runner with [customAdapter].
+     * There is no built-in model connection: models are Aidos's. Without an adapter this fails, and
+     * callers use [processTurnViaAidos], which runs the loop and the model in the desktop Aidos app.
      */
     suspend fun processTurn(
         incomingMessage: String,
         conversationHistory: List<AmpConversationTurn> = emptyList(),
-        baseUrl: String = "http://localhost:11434",
-        model: String = "llama3",
-        apiKey: String = "",
     ): Result<AmpAgentTurnResult> {
-        val adapter = customAdapter ?: OpenAiHttpModelAdapter(
-            baseUrl = baseUrl,
-            modelId = model,
-            apiKey = apiKey,
-        )
+        val adapter = customAdapter
+            ?: return Result.failure(IllegalStateException("No model adapter: run the turn through Aidos (processTurnViaAidos)"))
 
         val runner = AmpAgentRunner(adapter = adapter, maxSteps = 5)
 
@@ -73,6 +70,24 @@ class AmpAgentService(
             incomingMessage = incomingMessage,
             tools = tools,
         )
+    }
+
+    /**
+     * The loop and the model run in the desktop Aidos app (`/v1/agent`).
+     * [model] is an Aidos model id (`/v1/models`), e.g. `ollama:llama3` for a provider. [locality] is how far
+     * the turn's model calls may go (`local_only`, `trusted_cluster`, `any`); null leaves it to Aidos, which
+     * holds a request that says nothing to `local_only`. Returns null when Aidos is not running or does not offer the agent API, so callers can fall back
+     * to the embedded runner.
+     */
+    suspend fun processTurnViaAidos(
+        incomingMessage: String,
+        model: String,
+        conversationHistory: List<AmpConversationTurn> = emptyList(),
+        locality: String? = null,
+        endpoint: AidosEndpoint? = AidosEndpoint.discover(),
+    ): Result<AmpAgentTurnResult>? {
+        if (endpoint == null) return null
+        return AidosDesktopAgent(endpoint).executeTurn(model, systemPrompt, incomingMessage, conversationHistory, tools, locality)
     }
 
     private fun buildDefaultTools(): List<AmpToolDefinition> = listOf(

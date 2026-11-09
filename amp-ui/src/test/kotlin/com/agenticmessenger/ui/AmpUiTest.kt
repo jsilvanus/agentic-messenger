@@ -475,7 +475,9 @@ class AmpUiTest {
             scope = scope,
             currentUserId = "did:aidos:john",
             currentDeviceKeyId = "key_john_phone",
-            openAiClient = fakeAiClient
+            openAiClient = fakeAiClient,
+            // The fake client is the direct OpenAI path; the default path runs through desktop Aidos.
+            openAiConfig = OpenAiConfig(useDirectOpenAi = true)
         )
 
         // Directly ask AI copilot
@@ -544,7 +546,8 @@ class AmpUiTest {
             currentDeviceKeyId = aliceIdentity.deviceId,
             initialContact = bobContact,
             session = aliceSession,
-            openAiClient = fakeAiClient
+            openAiClient = fakeAiClient,
+            openAiConfig = OpenAiConfig(useDirectOpenAi = true)
         )
 
         // Type @ai copilot command

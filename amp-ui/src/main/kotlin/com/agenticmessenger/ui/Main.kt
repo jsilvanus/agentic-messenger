@@ -202,6 +202,35 @@ fun OpenAiConfigCard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                OutlinedTextField(
+                    value = config.aidosModel,
+                    onValueChange = { onConfigChanged(config.copy(aidosModel = it)) },
+                    label = { Text("Aidos model id (blank = first installed chat model)", fontSize = 11.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Use this endpoint directly (bypasses Aidos; off = run through Aidos)",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Switch(
+                        checked = config.useDirectOpenAi,
+                        onCheckedChange = { onConfigChanged(config.copy(useDirectOpenAi = it)) },
+                        modifier = Modifier.height(24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
