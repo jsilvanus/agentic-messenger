@@ -18,11 +18,11 @@ jobs:
           repository: jsilvanus/aidos
           path: aidos
       # The MCP Binder library is not on a registry yet: build it and put it in mavenLocal, which
-      # amp-mcp and amp-mcp-android resolve it from. Switch ref to main once the socket transport is merged.
+      # amp-mcp and amp-mcp-android resolve it from. Pinned to main (the socket transport is merged).
       - uses: actions/checkout@v4
         with:
           repository: jsilvanus/kotlin-mcp-android-binder
-          ref: claude/socket-transport
+          ref: main
           path: binder
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 21 }
