@@ -1,0 +1,18 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="Amp MCP host" android:allowBackup="false">
+        <!--
+          Exported so another app can bind. Access control is not this flag: it is ApprovalPolicy,
+          which admits only an app (package AND signing certificate) the user approved.
+        -->
+        <service
+            android:name=".AmpMcpBinderService"
+            android:exported="true" />
+
+        <activity android:name=".ApprovalActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

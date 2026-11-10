@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  amp-mcp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: agentic-messenger
+      # settings.gradle.kts includes ../aidos/agent by path (sibling checkout).
+      - uses: actions/checkout@v4
+        with:
+          repository: jsilvanus/aidos
+          path: aidos
+      # The MCP Binder library is not on a registry yet: build it and put it in mavenLocal, which
+      # amp-mcp and amp-mcp-android resolve it from. Pinned to main (the socket transport is merged).
+      - uses: actions/checkout@v4
+        with:
+          repository: jsilvanus/kotlin-mcp-android-binder
+          ref: main
+          path: binder
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Publish the Binder library to mavenLocal
+        working-directory: binder
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+        run: ./gradlew :binder-core:publishToMavenLocal :binder-android:publishToMavenLocal --no-daemon
+      - name: Test amp-mcp (provider, approvals) and build the Android host
+        working-directory: agentic-messenger
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # gradle.properties pins a Windows JDK path; use the runner JDK instead.
+        run: sh ./gradlew :amp-mcp:test :amp-agent:test :amp-mcp-android:assembleDebug --no-daemon -Dorg.gradle.java.home="$JAVA_HOME"
