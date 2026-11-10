@@ -24,7 +24,7 @@ include(":amp-client-sdk")
 include(":amp-agent")
 include(":amp-mcp")
 // The Android host for amp-mcp needs an Android SDK; plain JVM environments do not have one.
-if (System.getenv("ANDROID_HOME") != null || System.getenv("ANDROID_SDK_ROOT") != null || file("local.properties").readText().contains("sdk.dir")) {
+if (System.getenv("ANDROID_HOME") != null || System.getenv("ANDROID_SDK_ROOT") != null || (file("local.properties").exists() && file("local.properties").readText().contains("sdk.dir"))) {
     include(":amp-mcp-android")
 }
 
