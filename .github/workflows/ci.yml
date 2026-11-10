@@ -37,4 +37,4 @@ jobs:
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew :amp-mcp:test :amp-agent:test :amp-mcp-android:assembleDebug --no-daemon
+        run: sh ./gradlew :amp-mcp:test :amp-agent:test :amp-mcp-android:assembleDebug --no-daemon
