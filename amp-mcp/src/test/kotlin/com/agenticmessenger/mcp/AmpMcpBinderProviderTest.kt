@@ -121,6 +121,17 @@ class AmpMcpBinderProviderTest {
     }
 
     @Test
+    fun `an approved caller with uppercase hex digest matches lowercase caller identity`() {
+        val approvals = InMemoryCallerApprovals().apply {
+            approve(ApprovedCaller("fi.italeino.aidos", cert.uppercase()))
+        }
+        val text = session(provider(approvals), aidos) {
+            (it.callTool("get_contact_status", buildJsonObject { put("contactName", "Bob") }).content.single() as TextContent).text
+        }
+        assertTrue(text.isNotBlank())
+    }
+
+    @Test
     fun `an approved send goes out as the agent delegate, never as the human, by default`() {
         sent.clear()
         val approvals = InMemoryCallerApprovals().apply { approve(aidosKey) }

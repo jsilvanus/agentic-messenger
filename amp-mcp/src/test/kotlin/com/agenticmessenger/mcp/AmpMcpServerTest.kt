@@ -80,6 +80,21 @@ class AmpMcpServerTest {
     }
 
     @Test
+    fun nestedPropertiesInArgumentsCannotBypassAllowSendAsHumanFalse() {
+        val sent = mutableListOf<Boolean>()
+        val mcp = AmpMcpServer(serviceRecordingSends(sent).toolDefinitions, allowSendAsHuman = false)
+        connected(mcp) {
+            it.callTool("send_chat_message", buildJsonObject {
+                put("recipientName", "Bob")
+                put("messageText", "hi")
+                put("ghostwrite", true)
+                put("properties", buildJsonObject { put("ghostwrite", true) })
+            })
+        }
+        assertEquals(listOf(false), sent, "nested properties must never defeat ghostwrite stripping")
+    }
+
+    @Test
     fun anUnlistedToolCannotBeCalled() {
         val mcp = AmpMcpServer(AmpAgentService().toolDefinitions)
         val outcome = connected(mcp) {

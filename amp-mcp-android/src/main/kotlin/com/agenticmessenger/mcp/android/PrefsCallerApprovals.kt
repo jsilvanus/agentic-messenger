@@ -14,7 +14,7 @@ import com.agenticmessenger.mcp.CallerApprovalStore
 class PrefsCallerApprovals(context: Context) : CallerApprovalStore {
     private val prefs = context.applicationContext.getSharedPreferences("amp_mcp_callers", Context.MODE_PRIVATE)
 
-    private fun key(c: ApprovedCaller) = "${c.packageName}|${c.signingCertSha256}"
+    private fun key(c: ApprovedCaller) = "${c.packageName}|${c.signingCertSha256.lowercase()}"
 
     override fun decisionFor(caller: ApprovedCaller): ApprovalDecision = when (prefs.getString(key(caller), null)) {
         "A" -> ApprovalDecision.APPROVED
@@ -24,7 +24,7 @@ class PrefsCallerApprovals(context: Context) : CallerApprovalStore {
 
     fun approve(caller: ApprovedCaller) = prefs.edit().putString(key(caller), "A").remove(pendingKey(caller)).apply()
     fun deny(caller: ApprovedCaller) = prefs.edit().putString(key(caller), "D").remove(pendingKey(caller)).apply()
-    fun revoke(caller: ApprovedCaller) = prefs.edit().remove(key(caller)).apply()
+    fun revoke(caller: ApprovedCaller) = prefs.edit().remove(key(caller)).remove(pendingKey(caller)).apply()
 
     /** Called from the Binder thread when an undecided app tried to connect. */
     fun recordPending(caller: ApprovedCaller) {

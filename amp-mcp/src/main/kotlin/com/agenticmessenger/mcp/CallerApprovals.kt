@@ -5,7 +5,10 @@ import fi.italeino.mcp.binder.CallerPolicy
 import java.util.concurrent.ConcurrentHashMap
 
 /** An app, identified the only way Android lets us trust: its package together with its signing certificate. */
-data class ApprovedCaller(val packageName: String, val signingCertSha256: String)
+data class ApprovedCaller(val packageName: String, val signingCertSha256: String) {
+    fun normalized(): ApprovedCaller =
+        if (signingCertSha256.any { it in 'A'..'Z' }) copy(signingCertSha256 = signingCertSha256.lowercase()) else this
+}
 
 enum class ApprovalDecision { APPROVED, DENIED, PENDING }
 
@@ -25,11 +28,11 @@ interface CallerApprovalStore {
 class InMemoryCallerApprovals : CallerApprovalStore {
     private val decisions = ConcurrentHashMap<ApprovedCaller, ApprovalDecision>()
 
-    fun approve(caller: ApprovedCaller) { decisions[caller] = ApprovalDecision.APPROVED }
-    fun deny(caller: ApprovedCaller) { decisions[caller] = ApprovalDecision.DENIED }
-    fun revoke(caller: ApprovedCaller) { decisions.remove(caller) }
+    fun approve(caller: ApprovedCaller) { decisions[caller.normalized()] = ApprovalDecision.APPROVED }
+    fun deny(caller: ApprovedCaller) { decisions[caller.normalized()] = ApprovalDecision.DENIED }
+    fun revoke(caller: ApprovedCaller) { decisions.remove(caller.normalized()) }
 
-    override fun decisionFor(caller: ApprovedCaller): ApprovalDecision = decisions[caller] ?: ApprovalDecision.PENDING
+    override fun decisionFor(caller: ApprovedCaller): ApprovalDecision = decisions[caller.normalized()] ?: ApprovalDecision.PENDING
 }
 
 /**

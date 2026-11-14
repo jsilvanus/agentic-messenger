@@ -1,6 +1,7 @@
 package com.agenticmessenger.mcp.android
 
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.view.View
@@ -23,17 +24,28 @@ class ApprovalActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         approvals = PrefsCallerApprovals(this)
-        val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-        if (debuggable && intent.getBooleanExtra("approve_all_pending", false)) {
-            approvals.pending().forEach(approvals::approve)
-        }
+        handleAutoApproveIntent(intent)
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 32, 32, 32) }
         setContentView(ScrollView(this).apply { fitsSystemWindows = true; addView(list) })
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAutoApproveIntent(intent)
+    }
+
     override fun onResume() {
         super.onResume()
+        handleAutoApproveIntent(intent)
         render()
+    }
+
+    private fun handleAutoApproveIntent(targetIntent: Intent?) {
+        val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        if (debuggable && targetIntent?.getBooleanExtra("approve_all_pending", false) == true) {
+            approvals.pending().forEach(approvals::approve)
+        }
     }
 
     private fun render() {

@@ -50,11 +50,11 @@ class AmpMcpServer(
             server.addTool(
                 name = tool.name,
                 description = tool.description,
-                inputSchema = (if (allowSendAsHuman) tool.inputSchema else tool.inputSchema.withoutImpersonation()).toToolSchema(),
+                inputSchema = (if (allowSendAsHuman) tool.inputSchema else tool.inputSchema.schemaWithoutImpersonation()).toToolSchema(),
             ) { request ->
                 val result = try {
                     val arguments = request.arguments ?: JsonObject(emptyMap())
-                    tool.handler(if (allowSendAsHuman) arguments else arguments.withoutImpersonation())
+                    tool.handler(if (allowSendAsHuman) arguments else arguments.argumentsWithoutImpersonation())
                 } catch (e: Exception) {
                     // The message only: an exception text can carry arguments, and MCP errors reach another app.
                     return@addTool CallToolResult(listOf(TextContent("Tool '${tool.name}' failed")), isError = true)
@@ -74,17 +74,23 @@ class AmpMcpServer(
     }
 }
 
-/** Removes `ghostwrite`, so every send is badged as the agent delegate (see `allowSendAsHuman`). */
-private fun JsonObject.withoutImpersonation(): JsonObject {
+/** Removes `ghostwrite` from tool schemas so callers cannot discover or require it. */
+private fun JsonObject.schemaWithoutImpersonation(): JsonObject {
+    var updated: Map<String, kotlinx.serialization.json.JsonElement> = this
     val properties = this["properties"] as? JsonObject
-    return if (properties != null && "ghostwrite" in properties) {
-        // A tool schema: drop the property.
-        JsonObject(this + ("properties" to JsonObject(properties - "ghostwrite")))
-    } else {
-        // Call arguments: drop the key.
-        JsonObject(this - "ghostwrite")
+    if (properties != null && "ghostwrite" in properties) {
+        updated = updated + ("properties" to JsonObject(properties - "ghostwrite"))
     }
+    val required = this["required"] as? JsonArray
+    if (required != null && required.any { (it as? JsonPrimitive)?.contentOrNull == "ghostwrite" }) {
+        updated = updated + ("required" to JsonArray(required.filterNot { (it as? JsonPrimitive)?.contentOrNull == "ghostwrite" }))
+    }
+    return if (updated === this) this else JsonObject(updated)
 }
+
+/** Unconditionally strips `ghostwrite` from tool call arguments (never trusts nested `properties`). */
+private fun JsonObject.argumentsWithoutImpersonation(): JsonObject =
+    if ("ghostwrite" in this) JsonObject(this - "ghostwrite") else this
 
 private fun JsonObject.toToolSchema(): ToolSchema = ToolSchema(
     properties = this["properties"]?.jsonObject,
