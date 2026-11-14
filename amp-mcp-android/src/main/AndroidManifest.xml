@@ -6,7 +6,11 @@
         -->
         <service
             android:name=".AmpMcpBinderService"
-            android:exported="true" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="fi.italeino.mcp.action.BINDER_SERVER" />
+            </intent-filter>
+        </service>
 
         <activity android:name=".ApprovalActivity" android:exported="true">
             <intent-filter>
