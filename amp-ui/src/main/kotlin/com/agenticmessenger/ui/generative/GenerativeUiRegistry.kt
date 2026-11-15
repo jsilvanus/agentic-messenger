@@ -5,14 +5,14 @@ import androidx.compose.ui.Modifier
 import com.agenticmessenger.core.model.AttachmentType
 import com.agenticmessenger.core.model.PrivacyLevel
 import com.agenticmessenger.core.model.UniversalEnvelope
-import com.agenticmessenger.ui.atomic.PrivacySealBadge
-import com.agenticmessenger.ui.atomic.ProvenanceBadge
+import dev.aidos.tcr.mesh.PrivacySealBadge
+import dev.aidos.tcr.mesh.ProvenanceBadge
 import com.agenticmessenger.ui.model.AudioPlaybackUiState
 import com.agenticmessenger.ui.model.DisclosureStatus
 import com.agenticmessenger.ui.model.MeshProvenanceType
 import com.agenticmessenger.ui.model.TimelineItemUiModel
-import com.agenticmessenger.ui.molecular.ApprovalCard
-import com.agenticmessenger.ui.molecular.CalendarCopilotCard
+import dev.aidos.tcr.mesh.ApprovalCard
+import dev.aidos.tcr.mesh.CalendarCopilotCard
 import com.agenticmessenger.ui.molecular.MessageBubble
 
 /**

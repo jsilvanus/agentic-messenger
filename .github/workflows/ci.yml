@@ -39,3 +39,32 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # gradle.properties pins a Windows JDK path; use the runner JDK instead.
         run: sh ./gradlew :amp-mcp:test :amp-agent:test :amp-mcp-android:assembleDebug --no-daemon -Dorg.gradle.java.home="$JAVA_HOME"
+
+  amp-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: agentic-messenger
+      # settings.gradle.kts includes ../aidos/agent and ../aidos-tcr by path (sibling checkouts).
+      - uses: actions/checkout@v4
+        with:
+          repository: jsilvanus/aidos
+          path: aidos
+      - uses: actions/checkout@v4
+        with:
+          repository: jsilvanus/aidos-tcr
+          path: aidos-tcr
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Test amp-ui (mapping to the TCR, presenters, view models)
+        working-directory: agentic-messenger
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # gradle.properties pins a Windows JDK path; use the runner JDK instead.
+        run: sh ./gradlew :amp-ui:test --no-daemon -Dorg.gradle.java.home="$JAVA_HOME_21_X64"

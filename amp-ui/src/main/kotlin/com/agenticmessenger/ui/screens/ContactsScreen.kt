@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agenticmessenger.ui.model.ContactFilter
 import com.agenticmessenger.ui.model.ContactUiModel
-import com.agenticmessenger.ui.molecular.ContactRow
+import dev.aidos.tcr.mesh.ContactRow
 import com.agenticmessenger.ui.presenter.ContactsPresenter
 
 /**
