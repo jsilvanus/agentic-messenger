@@ -65,4 +65,47 @@ class TcrMappingTest {
         assertEquals(true, t.isViewed)
         assertEquals("note", t.localInferenceNote)
     }
+
+    @Test fun disclosureRequestMappingKeepsEveryField() {
+        val item = TimelineItemUiModel.ProgressiveDisclosureRequest(
+            id = "d1", timestamp = 7L, requestId = "r1",
+            requester = EndpointIdentifier("did:aidos:agent", EndpointType.AGENT_DELEGATE, "k"),
+            topicKey = "calendar", promptText = "Share?", proposedPayloadSnippet = "Tue 10:00",
+        )
+        val t = item.toTcr() as dev.aidos.tcr.model.TimelineItemUiModel.ProgressiveDisclosureRequest
+        assertEquals("d1", t.id)
+        assertEquals(7L, t.timestamp)
+        assertEquals("r1", t.requestId)
+        assertEquals(dev.aidos.tcr.model.EndpointType.AGENT_DELEGATE, t.requester.endpointType)
+        assertEquals("calendar", t.topicKey)
+        assertEquals("Share?", t.promptText)
+        assertEquals("Tue 10:00", t.proposedPayloadSnippet)
+        assertEquals(item.status, t.status)
+    }
+
+    @Test fun calendarProposalMappingKeepsEveryField() {
+        val item = TimelineItemUiModel.CalendarProposal(
+            id = "c1", timestamp = 9L, eventTitle = "Lunch", proposedTime = "12:00",
+            conflictSummary = "Overlaps", isActionTaken = true,
+        )
+        val t = item.toTcr() as dev.aidos.tcr.model.TimelineItemUiModel.CalendarProposal
+        assertEquals("c1", t.id)
+        assertEquals(9L, t.timestamp)
+        assertEquals("Lunch", t.eventTitle)
+        assertEquals("12:00", t.proposedTime)
+        assertEquals("Overlaps", t.conflictSummary)
+        assertEquals(true, t.isActionTaken)
+    }
+
+    @Test fun timelineMappingDispatchesOnTheItemKind() {
+        val items = listOf<TimelineItemUiModel>(
+            TimelineItemUiModel.CalendarProposal("c", 1L, "x", "y"),
+            TimelineItemUiModel.ProgressiveDisclosureRequest(
+                "d", 2L, "r", EndpointIdentifier("p", EndpointType.HUMAN_DIRECT, "k"), "t", "q",
+            ),
+        )
+        val mapped = items.map { it.toTcr() }
+        assertEquals(listOf("c", "d"), mapped.map { it.id })
+        assertEquals(listOf(1L, 2L), mapped.map { it.timestamp })
+    }
 }

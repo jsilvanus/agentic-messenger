@@ -46,3 +46,19 @@ internal fun TimelineItemUiModel.Message.toTcr() = TcrTimelineItem.Message(
     shieldedSttTranscript = shieldedSttTranscript, isSttVisible = isSttVisible,
     isUnshieldedForAi = isUnshieldedForAi, disclosureReceiptReceived = disclosureReceiptReceived,
 )
+
+internal fun TimelineItemUiModel.ProgressiveDisclosureRequest.toTcr() = TcrTimelineItem.ProgressiveDisclosureRequest(
+    id = id, timestamp = timestamp, requestId = requestId, requester = requester.toTcr(), topicKey = topicKey,
+    promptText = promptText, proposedPayloadSnippet = proposedPayloadSnippet, status = status,
+)
+
+internal fun TimelineItemUiModel.CalendarProposal.toTcr() = TcrTimelineItem.CalendarProposal(
+    id = id, timestamp = timestamp, eventTitle = eventTitle, proposedTime = proposedTime,
+    conflictSummary = conflictSummary, isActionTaken = isActionTaken,
+)
+
+internal fun TimelineItemUiModel.toTcr(): TcrTimelineItem = when (this) {
+    is TimelineItemUiModel.Message -> toTcr()
+    is TimelineItemUiModel.ProgressiveDisclosureRequest -> toTcr()
+    is TimelineItemUiModel.CalendarProposal -> toTcr()
+}
