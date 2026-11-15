@@ -27,10 +27,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.agenticmessenger.ui.atomic.PresenceIndicator
+import dev.aidos.tcr.mesh.PresenceIndicator
 import com.agenticmessenger.ui.model.PresenceState
 import com.agenticmessenger.ui.molecular.DocumentChatFlow
-import com.agenticmessenger.ui.molecular.DualViewToggle
+import dev.aidos.tcr.mesh.DualViewToggle
 import com.agenticmessenger.ui.presenter.ConversationPresenter
 
 /**
