@@ -24,6 +24,6 @@ kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarg
 
 dependencies {
     api(project(":amp-mcp"))
-    // Local Maven until published (kotlin-mcp-android-binder: publishToMavenLocal).
-    implementation("fi.italeino.mcp:binder-android:0.1.0-SNAPSHOT")
+    // The MCP Binder Android library from GitHub Packages (kotlin-mcp-android-binder), pinned in gradle.properties.
+    implementation("fi.italeino.mcp:binder-android:${findProperty("mcpBinderVersion")}")
 }
